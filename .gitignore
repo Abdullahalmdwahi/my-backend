@@ -1,0 +1,14 @@
+# 🔒 تجاهل ملفات البيئة السرية
+.env
+.env.local
+.env.production
+
+# 📦 تجاهل مجلدات المكتبات
+node_modules/
+dist/
+build/
+
+# 🖥️ تجاهل ملفات النظام
+.DS_Store
+Thumbs.db
+*.log
