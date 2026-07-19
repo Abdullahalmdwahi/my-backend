@@ -1,5 +1,5 @@
 // ============================================
-// 🚀 خادم تطبيق السوق - النسخة الكاملة مع الإيميلات
+// 🚀 خادم تطبيق السوق - النسخة الكاملة مع الإيميلات (محسّن)
 // ============================================
 
 const express = require('express');
@@ -19,7 +19,7 @@ const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ============================================
-// 📧 إعداد SMTP (Brevo)
+// 📧 إعداد SMTP (Brevo) مع Timeout
 // ============================================
 const transporter = nodemailer.createTransport({
   host: process.env.MAIL_HOST,
@@ -32,6 +32,19 @@ const transporter = nodemailer.createTransport({
   tls: {
     rejectUnauthorized: false,
   },
+  // ✅ إضافة Timeout
+  connectionTimeout: 10000,
+  greetingTimeout: 10000,
+  socketTimeout: 15000,
+});
+
+// ✅ التحقق من اتصال SMTP عند بدء التشغيل
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ فشل الاتصال بـ SMTP:', error.message);
+  } else {
+    console.log('✅ SMTP متصل بنجاح');
+  }
 });
 
 // ============================================
@@ -49,6 +62,30 @@ app.get('/', (req, res) => {
     message: '🚀 خادم السوق يعمل بنجاح!',
     timestamp: new Date().toISOString()
   });
+});
+
+// ✅ نقطة اختبار SMTP
+app.get('/api/email/test', async (req, res) => {
+  try {
+    await transporter.verify();
+    res.json({
+      success: true,
+      message: '✅ إعدادات SMTP صحيحة',
+      config: {
+        host: process.env.MAIL_HOST,
+        port: process.env.MAIL_PORT,
+        from: process.env.MAIL_FROM_ADDRESS,
+        auth: !!process.env.MAIL_USERNAME && !!process.env.MAIL_PASSWORD,
+      }
+    });
+  } catch (error) {
+    console.error('❌ فشل اختبار SMTP:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ فشل الاتصال بخادم البريد',
+      error: error.message,
+    });
+  }
 });
 
 // ============================================
@@ -1250,11 +1287,14 @@ app.put('/api/notifications/:id/read', async (req, res) => {
 });
 
 // ============================================
-// 📧 7. مجموعة الإيميلات (Email) - ✅ المضافة
+// 📧 7. مجموعة الإيميلات (Email) - ✅ المحسّنة
 // ============================================
 
-// ✅ إرسال إيميل عام
+// ✅ إرسال إيميل عام (محسّن)
 app.post('/api/email/send', async (req, res) => {
+  const startTime = Date.now();
+  console.log(`📧 [${new Date().toISOString()}] بدء إرسال إيميل`);
+
   try {
     const { to, subject, html, text } = req.body;
 
@@ -1265,37 +1305,75 @@ app.post('/api/email/send', async (req, res) => {
       });
     }
 
+    console.log(`📧 إلى: ${to}`);
+    console.log(`📧 الموضوع: ${subject}`);
+
     const mailOptions = {
-      from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
+      from: `"${process.env.MAIL_FROM_NAME || 'Sell In'}" <${process.env.MAIL_FROM_ADDRESS || 'no-reply@sellin.com'}>`,
       to: to,
       subject: subject,
       text: text || html.replace(/<[^>]*>/g, ''),
       html: html,
     };
 
-    const info = await transporter.sendMail(mailOptions);
+    // ✅ استخدام Promise.race لإضافة Timeout
+    const sendMailPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('TIMEOUT: انتهى وقت إرسال الإيميل')), 15000);
+    });
 
-    console.log(`✅ تم إرسال الإيميل إلى: ${to}`);
+    const info = await Promise.race([sendMailPromise, timeoutPromise]);
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ [${new Date().toISOString()}] تم إرسال الإيميل في ${duration}ms`);
     console.log(`📧 Message ID: ${info.messageId}`);
 
     res.json({
       success: true,
       message: '✅ تم إرسال الإيميل بنجاح',
       messageId: info.messageId,
+      duration: duration,
     });
 
   } catch (error) {
-    console.error('❌ فشل إرسال الإيميل:', error);
-    res.status(500).json({
+    const duration = Date.now() - startTime;
+    console.error(`❌ [${new Date().toISOString()}] فشل إرسال الإيميل بعد ${duration}ms:`, error.message);
+
+    // ✅ تحديد نوع الخطأ
+    let errorMessage = '❌ فشل إرسال الإيميل';
+    let statusCode = 500;
+
+    if (error.message.includes('TIMEOUT')) {
+      errorMessage = '⏰ انتهى وقت إرسال الإيميل، حاول مرة أخرى';
+      statusCode = 408;
+    } else if (error.message.includes('ECONNREFUSED')) {
+      errorMessage = '❌ لا يمكن الاتصال بخادم البريد';
+      statusCode = 503;
+    } else if (error.message.includes('Authentication')) {
+      errorMessage = '❌ فشل المصادقة مع خادم البريد، تأكد من بيانات الدخول';
+      statusCode = 401;
+    } else if (error.message.includes('Invalid login')) {
+      errorMessage = '❌ اسم المستخدم أو كلمة المرور غير صحيحة';
+      statusCode = 401;
+    } else if (error.message.includes('connect')) {
+      errorMessage = '❌ لا يمكن الاتصال بخادم البريد، تأكد من الاتصال بالإنترنت';
+      statusCode = 503;
+    }
+
+    res.status(statusCode).json({
       success: false,
-      message: '❌ فشل إرسال الإيميل',
-      error: error.message,
+      message: errorMessage,
+      duration: duration,
+      ...(process.env.NODE_ENV === 'development' && { error: error.message }),
     });
   }
 });
 
 // ✅ إرسال إيميل التفعيل
 app.post('/api/email/send-verification', async (req, res) => {
+  const startTime = Date.now();
+  console.log(`📧 [${new Date().toISOString()}] بدء إرسال إيميل التفعيل`);
+
   try {
     const { to, token } = req.body;
 
@@ -1310,13 +1388,21 @@ app.post('/api/email/send-verification', async (req, res) => {
     const html = buildVerificationEmailHtml(token);
 
     const mailOptions = {
-      from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
+      from: `"${process.env.MAIL_FROM_NAME || 'Sell In'}" <${process.env.MAIL_FROM_ADDRESS || 'no-reply@sellin.com'}>`,
       to: to,
       subject: subject,
       html: html,
     };
 
-    await transporter.sendMail(mailOptions);
+    const sendMailPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('TIMEOUT')), 15000);
+    });
+
+    await Promise.race([sendMailPromise, timeoutPromise]);
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ [${new Date().toISOString()}] تم إرسال إيميل التفعيل في ${duration}ms`);
 
     res.json({
       success: true,
@@ -1324,16 +1410,20 @@ app.post('/api/email/send-verification', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ فشل إرسال إيميل التفعيل:', error);
+    const duration = Date.now() - startTime;
+    console.error(`❌ [${new Date().toISOString()}] فشل إرسال إيميل التفعيل بعد ${duration}ms:`, error.message);
     res.status(500).json({
       success: false,
-      message: '❌ فشل إرسال إيميل التفعيل',
+      message: '❌ فشل إرسال إيميل التفعيل، حاول مرة أخرى',
     });
   }
 });
 
 // ✅ إرسال إيميل إعادة تعيين كلمة المرور
 app.post('/api/email/send-password-reset', async (req, res) => {
+  const startTime = Date.now();
+  console.log(`📧 [${new Date().toISOString()}] بدء إرسال إعادة تعيين كلمة المرور`);
+
   try {
     const { to, token } = req.body;
 
@@ -1344,17 +1434,28 @@ app.post('/api/email/send-password-reset', async (req, res) => {
       });
     }
 
+    console.log(`📧 إلى: ${to}`);
+    console.log(`📧 الرمز: ${token}`);
+
     const subject = '🔐 إعادة تعيين كلمة المرور - Sell In';
     const html = buildPasswordResetEmailHtml(token);
 
     const mailOptions = {
-      from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
+      from: `"${process.env.MAIL_FROM_NAME || 'Sell In'}" <${process.env.MAIL_FROM_ADDRESS || 'no-reply@sellin.com'}>`,
       to: to,
       subject: subject,
       html: html,
     };
 
-    await transporter.sendMail(mailOptions);
+    const sendMailPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('TIMEOUT')), 15000);
+    });
+
+    await Promise.race([sendMailPromise, timeoutPromise]);
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ [${new Date().toISOString()}] تم إرسال إعادة تعيين كلمة المرور في ${duration}ms`);
 
     res.json({
       success: true,
@@ -1362,16 +1463,20 @@ app.post('/api/email/send-password-reset', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ فشل إرسال إيميل إعادة تعيين كلمة المرور:', error);
+    const duration = Date.now() - startTime;
+    console.error(`❌ [${new Date().toISOString()}] فشل إرسال إعادة تعيين كلمة المرور بعد ${duration}ms:`, error.message);
     res.status(500).json({
       success: false,
-      message: '❌ فشل إرسال الإيميل',
+      message: '❌ فشل إرسال الإيميل، حاول مرة أخرى',
     });
   }
 });
 
 // ✅ إرسال إيميل التحقق من الجهاز
 app.post('/api/email/send-device-verification', async (req, res) => {
+  const startTime = Date.now();
+  console.log(`📧 [${new Date().toISOString()}] بدء إرسال رمز التحقق`);
+
   try {
     const { to, token } = req.body;
 
@@ -1386,13 +1491,21 @@ app.post('/api/email/send-device-verification', async (req, res) => {
     const html = buildDeviceVerificationEmailHtml(token);
 
     const mailOptions = {
-      from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
+      from: `"${process.env.MAIL_FROM_NAME || 'Sell In'}" <${process.env.MAIL_FROM_ADDRESS || 'no-reply@sellin.com'}>`,
       to: to,
       subject: subject,
       html: html,
     };
 
-    await transporter.sendMail(mailOptions);
+    const sendMailPromise = transporter.sendMail(mailOptions);
+    const timeoutPromise = new Promise((_, reject) => {
+      setTimeout(() => reject(new Error('TIMEOUT')), 15000);
+    });
+
+    await Promise.race([sendMailPromise, timeoutPromise]);
+
+    const duration = Date.now() - startTime;
+    console.log(`✅ [${new Date().toISOString()}] تم إرسال رمز التحقق في ${duration}ms`);
 
     res.json({
       success: true,
@@ -1400,10 +1513,11 @@ app.post('/api/email/send-device-verification', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('❌ فشل إرسال رمز التحقق:', error);
+    const duration = Date.now() - startTime;
+    console.error(`❌ [${new Date().toISOString()}] فشل إرسال رمز التحقق بعد ${duration}ms:`, error.message);
     res.status(500).json({
       success: false,
-      message: '❌ فشل إرسال رمز التحقق',
+      message: '❌ فشل إرسال رمز التحقق، حاول مرة أخرى',
     });
   }
 });
@@ -1693,5 +1807,7 @@ app.get('/api/admin/transactions', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ الخادم يعمل على المنفذ ${PORT}`);
   console.log(`🌐 http://localhost:${PORT}`);
-  console.log(`📧 SMTP configured: ${process.env.MAIL_HOST}`);
+  console.log(`📧 SMTP: ${process.env.MAIL_HOST}`);
+  console.log(`📧 من: ${process.env.MAIL_FROM_ADDRESS}`);
+  console.log(`📧 المستخدم: ${process.env.MAIL_USERNAME}`);
 });
