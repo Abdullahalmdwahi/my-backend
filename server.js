@@ -1,10 +1,11 @@
 // ============================================
-// 🚀 خادم تطبيق السوق - النسخة الكاملة
+// 🚀 خادم تطبيق السوق - النسخة الكاملة مع الإيميلات
 // ============================================
 
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const app = express();
@@ -16,6 +17,22 @@ const PORT = process.env.PORT || 3000;
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
+
+// ============================================
+// 📧 إعداد SMTP (Brevo)
+// ============================================
+const transporter = nodemailer.createTransport({
+  host: process.env.MAIL_HOST,
+  port: parseInt(process.env.MAIL_PORT || '587'),
+  secure: process.env.MAIL_ENCRYPTION === 'ssl',
+  auth: {
+    user: process.env.MAIL_USERNAME,
+    pass: process.env.MAIL_PASSWORD,
+  },
+  tls: {
+    rejectUnauthorized: false,
+  },
+});
 
 // ============================================
 // ⚙️ إعدادات الخادم
@@ -43,7 +60,6 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     const { email, password, name, businessName, deviceId, userTypeId, specializations } = req.body;
     
-    // التحقق من البيانات
     if (!email || !password) {
       return res.status(400).json({ 
         success: false, 
@@ -58,7 +74,6 @@ app.post('/api/auth/register', async (req, res) => {
       });
     }
     
-    // التحقق من وجود المستخدم
     const { data: existingUser } = await supabase
       .from('users')
       .select('email')
@@ -72,7 +87,6 @@ app.post('/api/auth/register', async (req, res) => {
       });
     }
     
-    // التحقق من الاسم التجاري
     if (businessName) {
       const { data: existingBusiness } = await supabase
         .from('users')
@@ -88,7 +102,6 @@ app.post('/api/auth/register', async (req, res) => {
       }
     }
     
-    // إنشاء المستخدم في Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -126,7 +139,6 @@ app.post('/api/auth/register', async (req, res) => {
     
     const userId = authData.user.id;
     
-    // إنشاء المستخدم في جدول users
     const { error: userError } = await supabase
       .from('users')
       .insert({
@@ -184,7 +196,6 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
     
-    // تسجيل الدخول عبر Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email,
       password
@@ -209,7 +220,6 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
     
-    // جلب بيانات المستخدم من جدول users
     const { data: userData, error: userError } = await supabase
       .from('users')
       .select('*')
@@ -223,7 +233,6 @@ app.post('/api/auth/login', async (req, res) => {
       });
     }
     
-    // تحديث آخر تسجيل دخول
     await supabase
       .from('users')
       .update({ last_login_at: new Date().toISOString() })
@@ -354,7 +363,6 @@ app.post('/api/payments/verify-wallet-code', async (req, res) => {
       });
     }
     
-    // 1. التحقق من الكود في قاعدة البيانات
     const { data: walletCode, error } = await supabase
       .from('wallet_codes')
       .select('*')
@@ -370,7 +378,6 @@ app.post('/api/payments/verify-wallet-code', async (req, res) => {
       });
     }
     
-    // 2. التحقق من انتهاء الصلاحية
     const expiresAt = new Date(walletCode.expires_at);
     if (expiresAt < new Date()) {
       return res.status(400).json({
@@ -379,7 +386,6 @@ app.post('/api/payments/verify-wallet-code', async (req, res) => {
       });
     }
     
-    // 3. التحقق من المبلغ
     if (walletCode.amount < amount) {
       return res.status(400).json({
         success: false,
@@ -414,7 +420,6 @@ app.post('/api/payments/activate-subscription', async (req, res) => {
       });
     }
     
-    // 1. التحقق من الكود
     const { data: walletCode, error: codeError } = await supabase
       .from('wallet_codes')
       .select('*')
@@ -430,7 +435,6 @@ app.post('/api/payments/activate-subscription', async (req, res) => {
       });
     }
     
-    // 2. جلب تفاصيل الباقة
     const { data: subscription, error: subError } = await supabase
       .from('subscriptions')
       .select('*')
@@ -444,13 +448,11 @@ app.post('/api/payments/activate-subscription', async (req, res) => {
       });
     }
     
-    // 3. إلغاء تفعيل الاشتراكات السابقة
     await supabase
       .from('user_subscriptions')
       .update({ is_active: false })
       .eq('user_id', userId);
     
-    // 4. تفعيل الاشتراك الجديد
     const startDate = new Date();
     const endDate = new Date();
     endDate.setDate(endDate.getDate() + subscription.duration_days);
@@ -487,7 +489,6 @@ app.post('/api/payments/activate-subscription', async (req, res) => {
       });
     }
     
-    // 5. تحديث حالة الكود (استخدامه)
     await supabase
       .from('wallet_codes')
       .update({ 
@@ -497,7 +498,6 @@ app.post('/api/payments/activate-subscription', async (req, res) => {
       })
       .eq('id', walletCode.id);
     
-    // 6. تسجيل المعاملة
     await supabase
       .from('payment_transactions')
       .insert({
@@ -656,7 +656,6 @@ app.post('/api/wallets/deduct-balance', async (req, res) => {
       });
     }
     
-    // 1. جلب محفظة المستخدم
     const { data: userWallet, error: walletError } = await supabase
       .from('user_wallets')
       .select('*')
@@ -671,7 +670,6 @@ app.post('/api/wallets/deduct-balance', async (req, res) => {
       });
     }
     
-    // 2. التحقق من الرصيد
     if (userWallet.balance < amount) {
       return res.status(400).json({ 
         success: false, 
@@ -679,7 +677,6 @@ app.post('/api/wallets/deduct-balance', async (req, res) => {
       });
     }
     
-    // 3. تحديث الرصيد
     const newBalance = userWallet.balance - amount;
     const { error: updateError } = await supabase
       .from('user_wallets')
@@ -696,7 +693,6 @@ app.post('/api/wallets/deduct-balance', async (req, res) => {
       });
     }
     
-    // 4. تسجيل المعاملة
     const { error: transactionError } = await supabase
       .from('wallet_transactions')
       .insert({
@@ -953,7 +949,6 @@ app.get('/api/products/:id', async (req, res) => {
       });
     }
     
-    // زيادة عدد المشاهدات
     await supabase
       .from('products')
       .update({ views: (product.views || 0) + 1 })
@@ -1127,7 +1122,6 @@ app.put('/api/orders/:orderId/status', async (req, res) => {
       });
     }
     
-    // جلب الحالة القديمة
     const { data: oldOrder, error: fetchError } = await supabase
       .from('orders')
       .select('status')
@@ -1141,7 +1135,6 @@ app.put('/api/orders/:orderId/status', async (req, res) => {
       });
     }
     
-    // تحديث الحالة
     const { data: order, error } = await supabase
       .from('orders')
       .update({ 
@@ -1159,7 +1152,6 @@ app.put('/api/orders/:orderId/status', async (req, res) => {
       });
     }
     
-    // تسجيل تاريخ الحالة
     await supabase
       .from('order_status_history')
       .insert({
@@ -1258,24 +1250,338 @@ app.put('/api/notifications/:id/read', async (req, res) => {
 });
 
 // ============================================
-// 📊 7. مجموعة المدير (Admin)
+// 📧 7. مجموعة الإيميلات (Email) - ✅ المضافة
+// ============================================
+
+// ✅ إرسال إيميل عام
+app.post('/api/email/send', async (req, res) => {
+  try {
+    const { to, subject, html, text } = req.body;
+
+    if (!to || !subject) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ البريد الإلكتروني والموضوع مطلوبان',
+      });
+    }
+
+    const mailOptions = {
+      from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
+      to: to,
+      subject: subject,
+      text: text || html.replace(/<[^>]*>/g, ''),
+      html: html,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+
+    console.log(`✅ تم إرسال الإيميل إلى: ${to}`);
+    console.log(`📧 Message ID: ${info.messageId}`);
+
+    res.json({
+      success: true,
+      message: '✅ تم إرسال الإيميل بنجاح',
+      messageId: info.messageId,
+    });
+
+  } catch (error) {
+    console.error('❌ فشل إرسال الإيميل:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ فشل إرسال الإيميل',
+      error: error.message,
+    });
+  }
+});
+
+// ✅ إرسال إيميل التفعيل
+app.post('/api/email/send-verification', async (req, res) => {
+  try {
+    const { to, token } = req.body;
+
+    if (!to || !token) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ البريد الإلكتروني والرمز مطلوبان',
+      });
+    }
+
+    const subject = '✅ تفعيل حسابك في Sell In';
+    const html = buildVerificationEmailHtml(token);
+
+    const mailOptions = {
+      from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
+      to: to,
+      subject: subject,
+      html: html,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.json({
+      success: true,
+      message: '✅ تم إرسال إيميل التفعيل بنجاح',
+    });
+
+  } catch (error) {
+    console.error('❌ فشل إرسال إيميل التفعيل:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ فشل إرسال إيميل التفعيل',
+    });
+  }
+});
+
+// ✅ إرسال إيميل إعادة تعيين كلمة المرور
+app.post('/api/email/send-password-reset', async (req, res) => {
+  try {
+    const { to, token } = req.body;
+
+    if (!to || !token) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ البريد الإلكتروني والرمز مطلوبان',
+      });
+    }
+
+    const subject = '🔐 إعادة تعيين كلمة المرور - Sell In';
+    const html = buildPasswordResetEmailHtml(token);
+
+    const mailOptions = {
+      from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
+      to: to,
+      subject: subject,
+      html: html,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.json({
+      success: true,
+      message: '✅ تم إرسال إيميل إعادة تعيين كلمة المرور بنجاح',
+    });
+
+  } catch (error) {
+    console.error('❌ فشل إرسال إيميل إعادة تعيين كلمة المرور:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ فشل إرسال الإيميل',
+    });
+  }
+});
+
+// ✅ إرسال إيميل التحقق من الجهاز
+app.post('/api/email/send-device-verification', async (req, res) => {
+  try {
+    const { to, token } = req.body;
+
+    if (!to || !token) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ البريد الإلكتروني والرمز مطلوبان',
+      });
+    }
+
+    const subject = '🔐 رمز التحقق لتسجيل الدخول - Sell In';
+    const html = buildDeviceVerificationEmailHtml(token);
+
+    const mailOptions = {
+      from: `"${process.env.MAIL_FROM_NAME}" <${process.env.MAIL_FROM_ADDRESS}>`,
+      to: to,
+      subject: subject,
+      html: html,
+    };
+
+    await transporter.sendMail(mailOptions);
+
+    res.json({
+      success: true,
+      message: '✅ تم إرسال رمز التحقق بنجاح',
+    });
+
+  } catch (error) {
+    console.error('❌ فشل إرسال رمز التحقق:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ فشل إرسال رمز التحقق',
+    });
+  }
+});
+
+// ============================================
+// 📧 قوالب الإيميلات
+// ============================================
+
+function buildVerificationEmailHtml(token) {
+  return `
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 20px auto; padding: 0; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #7F1D1D, #991B1B); color: white; padding: 30px 20px; text-align: center; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
+        .header p { margin: 5px 0 0; opacity: 0.9; font-size: 14px; }
+        .content { padding: 30px; }
+        .code-box { text-align: center; background: #f8f9fa; padding: 25px; border-radius: 16px; margin: 20px 0; border: 2px dashed #7F1D1D; }
+        .code { font-size: 42px; font-weight: bold; color: #7F1D1D; letter-spacing: 8px; font-family: 'Courier New', monospace; background: white; padding: 10px 20px; border-radius: 8px; display: inline-block; }
+        .footer { text-align: center; font-size: 12px; color: #999; padding: 20px; border-top: 1px solid #eee; background: #fafafa; }
+        .warning { background: #FFF3E0; padding: 15px; border-radius: 12px; margin: 20px 0; border-right: 4px solid #FF9800; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🛡️ Sell In</h1>
+          <p>سوقك الإلكتروني الموثوق</p>
+        </div>
+        <div class="content">
+          <h2 style="color: #7F1D1D;">✅ مرحباً بك في Sell In!</h2>
+          <p>شكراً لانضمامك إلى سوقنا الإلكتروني. 🎉</p>
+          <div class="code-box">
+            <p style="margin-bottom: 12px; color: #666; font-size: 14px;">🔑 رمز التفعيل الخاص بك هو:</p>
+            <div class="code">${token}</div>
+            <p style="margin-top: 12px; color: #666; font-size: 12px;">أدخل هذا الرمز في التطبيق لتفعيل حسابك</p>
+          </div>
+          <div class="warning">
+            <p style="margin: 0; color: #E65100; font-weight: bold;">⚠️ تنبيهات هامة:</p>
+            <ul style="margin: 10px 0 0; color: #E65100; font-size: 13px; padding-right: 20px;">
+              <li>هذا الرمز صالح لمدة <strong>24 ساعة</strong> فقط</li>
+              <li>إذا لم تقم بإنشاء هذا الحساب، يرجى تجاهل هذا البريد</li>
+              <li>لا تشارك هذا الرمز مع أي شخص آخر</li>
+            </ul>
+          </div>
+        </div>
+        <div class="footer">
+          <p>© ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function buildPasswordResetEmailHtml(token) {
+  return `
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 20px auto; padding: 0; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #7F1D1D, #991B1B); color: white; padding: 30px 20px; text-align: center; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
+        .header p { margin: 5px 0 0; opacity: 0.9; font-size: 14px; }
+        .content { padding: 30px; }
+        .code-box { text-align: center; background: #f8f9fa; padding: 25px; border-radius: 16px; margin: 20px 0; border: 2px dashed #7F1D1D; }
+        .code { font-size: 42px; font-weight: bold; color: #7F1D1D; letter-spacing: 8px; font-family: 'Courier New', monospace; background: white; padding: 10px 20px; border-radius: 8px; display: inline-block; }
+        .footer { text-align: center; font-size: 12px; color: #999; padding: 20px; border-top: 1px solid #eee; background: #fafafa; }
+        .warning { background: #FFF3E0; padding: 15px; border-radius: 12px; margin: 20px 0; border-right: 4px solid #FF9800; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🛡️ Sell In</h1>
+          <p>سوقك الإلكتروني الموثوق</p>
+        </div>
+        <div class="content">
+          <h2 style="color: #7F1D1D;">🔐 إعادة تعيين كلمة المرور</h2>
+          <p>مرحباً،</p>
+          <p>لقد تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك في <strong>Sell In</strong>.</p>
+          <div class="code-box">
+            <p style="margin-bottom: 12px; color: #666; font-size: 14px;">📱 رمز التحقق الخاص بك هو:</p>
+            <div class="code">${token}</div>
+            <p style="margin-top: 12px; color: #666; font-size: 12px;">أدخل هذا الرمز في التطبيق لإعادة تعيين كلمة المرور</p>
+          </div>
+          <div class="warning">
+            <p style="margin: 0; color: #E65100; font-weight: bold;">⚠️ تنبيهات هامة:</p>
+            <ul style="margin: 10px 0 0; color: #E65100; font-size: 13px; padding-right: 20px;">
+              <li>هذا الرمز صالح لمدة <strong>24 ساعة</strong> فقط</li>
+              <li>إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذا البريد</li>
+              <li>لا تشارك هذا الرمز مع أي شخص آخر</li>
+            </ul>
+          </div>
+        </div>
+        <div class="footer">
+          <p>© ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+function buildDeviceVerificationEmailHtml(token) {
+  return `
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
+        .container { max-width: 600px; margin: 20px auto; padding: 0; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #7F1D1D, #991B1B); color: white; padding: 30px 20px; text-align: center; }
+        .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
+        .header p { margin: 5px 0 0; opacity: 0.9; font-size: 14px; }
+        .content { padding: 30px; }
+        .code-box { text-align: center; background: #f8f9fa; padding: 25px; border-radius: 16px; margin: 20px 0; border: 2px dashed #7F1D1D; }
+        .code { font-size: 42px; font-weight: bold; color: #7F1D1D; letter-spacing: 8px; font-family: 'Courier New', monospace; background: white; padding: 10px 20px; border-radius: 8px; display: inline-block; }
+        .warning { background: #FFF3E0; padding: 15px; border-radius: 12px; margin: 20px 0; border-right: 4px solid #FF9800; }
+        .footer { text-align: center; font-size: 12px; color: #999; padding: 20px; border-top: 1px solid #eee; background: #fafafa; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🛡️ Sell In</h1>
+          <p>سوقك الإلكتروني الموثوق</p>
+        </div>
+        <div class="content">
+          <h2 style="color: #7F1D1D;">🔐 التحقق من جهاز جديد</h2>
+          <p>مرحباً،</p>
+          <p>تم طلب تسجيل الدخول إلى حسابك من جهاز جديد.</p>
+          <div class="code-box">
+            <p style="margin-bottom: 12px; color: #666; font-size: 14px;">🔑 رمز التحقق الخاص بك هو:</p>
+            <div class="code">${token}</div>
+            <p style="margin-top: 12px; color: #666; font-size: 12px;">أدخل هذا الرمز في التطبيق لتأكيد الجهاز</p>
+          </div>
+          <div class="warning">
+            <p style="margin: 0; color: #E65100; font-weight: bold;">⚠️ هذا الرمز صالح لمدة <strong>10 دقائق</strong> فقط</p>
+            <p style="margin: 5px 0 0; color: #E65100; font-size: 13px;">🔒 إذا لم تكن أنت من حاول تسجيل الدخول، يرجى تغيير كلمة المرور فوراً.</p>
+          </div>
+        </div>
+        <div class="footer">
+          <p>© ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة</p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+// ============================================
+// 📊 8. مجموعة المدير (Admin)
 // ============================================
 
 // ✅ إحصائيات النظام
 app.get('/api/admin/stats', async (req, res) => {
   try {
-    // عدد المستخدمين
     const { count: usersCount } = await supabase
       .from('users')
       .select('*', { count: 'exact', head: true });
     
-    // عدد المنتجات النشطة
     const { count: productsCount } = await supabase
       .from('products')
       .select('*', { count: 'exact', head: true })
       .eq('status', 'active');
     
-    // عدد الطلبات اليوم
     const today = new Date().toISOString().split('T')[0];
     const { count: todayOrders } = await supabase
       .from('orders')
@@ -1283,7 +1589,6 @@ app.get('/api/admin/stats', async (req, res) => {
       .gte('created_at', `${today}T00:00:00`)
       .lt('created_at', `${today}T23:59:59`);
     
-    // إجمالي الإيرادات
     const { data: revenue } = await supabase
       .from('payment_transactions')
       .select('amount')
@@ -1291,7 +1596,6 @@ app.get('/api/admin/stats', async (req, res) => {
     
     const totalRevenue = revenue?.reduce((sum, r) => sum + r.amount, 0) || 0;
     
-    // الاشتراكات النشطة
     const { count: activeSubscriptions } = await supabase
       .from('user_subscriptions')
       .select('*', { count: 'exact', head: true })
@@ -1389,4 +1693,5 @@ app.get('/api/admin/transactions', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ الخادم يعمل على المنفذ ${PORT}`);
   console.log(`🌐 http://localhost:${PORT}`);
+  console.log(`📧 SMTP configured: ${process.env.MAIL_HOST}`);
 });
