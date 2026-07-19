@@ -1,5 +1,5 @@
 // ============================================
-// 🚀 خادم تطبيق السوق
+// 🚀 خادم تطبيق السوق - النسخة الكاملة
 // ============================================
 
 const express = require('express');
@@ -21,13 +21,11 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // ⚙️ إعدادات الخادم
 // ============================================
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // ============================================
-// 🌐 نقاط النهاية (Endpoints)
+// 🏠 نقطة نهاية اختبار الاتصال
 // ============================================
-
-// ✅ اختبار الاتصال
 app.get('/', (req, res) => {
   res.json({
     success: true,
@@ -36,10 +34,325 @@ app.get('/', (req, res) => {
   });
 });
 
+// ============================================
+// 🔐 1. مجموعة المصادقة (Auth)
+// ============================================
+
+// ✅ تسجيل مستخدم جديد
+app.post('/api/auth/register', async (req, res) => {
+  try {
+    const { email, password, name, businessName, deviceId, userTypeId, specializations } = req.body;
+    
+    // التحقق من البيانات
+    if (!email || !password) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ البريد الإلكتروني وكلمة المرور مطلوبة' 
+      });
+    }
+    
+    if (password.length < 6) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ كلمة المرور يجب أن تكون 6 أحرف على الأقل' 
+      });
+    }
+    
+    // التحقق من وجود المستخدم
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('email')
+      .eq('email', email)
+      .maybeSingle();
+    
+    if (existingUser) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ البريد الإلكتروني مسجل مسبقاً' 
+      });
+    }
+    
+    // التحقق من الاسم التجاري
+    if (businessName) {
+      const { data: existingBusiness } = await supabase
+        .from('users')
+        .select('business_name')
+        .eq('business_name', businessName)
+        .maybeSingle();
+      
+      if (existingBusiness) {
+        return res.status(400).json({ 
+          success: false, 
+          message: '❌ الاسم التجاري مستخدم مسبقاً' 
+        });
+      }
+    }
+    
+    // إنشاء المستخدم في Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          name: name || email.split('@')[0],
+          business_name: businessName || '',
+          device_id: deviceId || '',
+          is_verified: false,
+          user_type_id: userTypeId || '1',
+          specializations: specializations || []
+        }
+      }
+    });
+    
+    if (authError) {
+      if (authError.message.includes('rate limit')) {
+        return res.status(429).json({ 
+          success: false, 
+          message: '❌ محاولات كثيرة، حاول لاحقاً' 
+        });
+      }
+      return res.status(400).json({ 
+        success: false, 
+        message: `❌ فشل التسجيل: ${authError.message}` 
+      });
+    }
+    
+    if (!authData.user) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ فشل إنشاء المستخدم' 
+      });
+    }
+    
+    const userId = authData.user.id;
+    
+    // إنشاء المستخدم في جدول users
+    const { error: userError } = await supabase
+      .from('users')
+      .insert({
+        id: userId,
+        email: email,
+        name: name || email.split('@')[0],
+        business_name: businessName || '',
+        phone: '',
+        device_id: deviceId || '',
+        is_verified: false,
+        free_posts_remaining: 1,
+        notifications_remaining: 0,
+        role: 'user',
+        user_type_id: userTypeId || '1',
+        specializations: specializations || [],
+        created_at: new Date().toISOString()
+      });
+    
+    if (userError) {
+      console.error('❌ فشل إنشاء المستخدم في جدول users:', userError);
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل حفظ بيانات المستخدم' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: '✅ تم تسجيل المستخدم بنجاح',
+      data: {
+        id: userId,
+        email: email,
+        name: name || email.split('@')[0]
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في التسجيل:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ تسجيل الدخول
+app.post('/api/auth/login', async (req, res) => {
+  try {
+    const { email, password } = req.body;
+    
+    if (!email || !password) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ البريد الإلكتروني وكلمة المرور مطلوبة' 
+      });
+    }
+    
+    // تسجيل الدخول عبر Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email,
+      password
+    });
+    
+    if (authError) {
+      if (authError.message.includes('Invalid login credentials')) {
+        return res.status(401).json({ 
+          success: false, 
+          message: '❌ البريد الإلكتروني أو كلمة المرور غير صحيحة' 
+        });
+      }
+      if (authError.message.includes('Email not confirmed')) {
+        return res.status(403).json({ 
+          success: false, 
+          message: '❌ البريد الإلكتروني غير مفعل، تأكد من بريدك' 
+        });
+      }
+      return res.status(400).json({ 
+        success: false, 
+        message: `❌ فشل تسجيل الدخول: ${authError.message}` 
+      });
+    }
+    
+    // جلب بيانات المستخدم من جدول users
+    const { data: userData, error: userError } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', authData.user.id)
+      .maybeSingle();
+    
+    if (userError || !userData) {
+      return res.status(404).json({ 
+        success: false, 
+        message: '❌ لم يتم العثور على بيانات المستخدم' 
+      });
+    }
+    
+    // تحديث آخر تسجيل دخول
+    await supabase
+      .from('users')
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('id', authData.user.id);
+    
+    res.json({
+      success: true,
+      message: '✅ تم تسجيل الدخول بنجاح',
+      data: {
+        user: userData,
+        session: authData.session
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في تسجيل الدخول:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ تسجيل الخروج
+app.post('/api/auth/logout', async (req, res) => {
+  try {
+    const { error } = await supabase.auth.signOut();
+    
+    if (error) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `❌ فشل تسجيل الخروج: ${error.message}` 
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: '✅ تم تسجيل الخروج بنجاح'
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في تسجيل الخروج:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ إعادة تعيين كلمة المرور
+app.post('/api/auth/reset-password', async (req, res) => {
+  try {
+    const { email } = req.body;
+    
+    if (!email) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ البريد الإلكتروني مطلوب' 
+      });
+    }
+    
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    
+    if (error) {
+      return res.status(400).json({ 
+        success: false, 
+        message: `❌ فشل إعادة تعيين كلمة المرور: ${error.message}` 
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: '✅ تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك'
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في إعادة تعيين كلمة المرور:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ============================================
+// 💰 2. مجموعة المدفوعات (Payments)
+// ============================================
+
+// ✅ جلب الباقات المتاحة
+app.get('/api/payments/subscriptions', async (req, res) => {
+  try {
+    const { data: subscriptions, error } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('is_active', true)
+      .order('duration_days', { ascending: true });
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب الباقات' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      subscriptions: subscriptions || []
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب الباقات:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
 // ✅ التحقق من صحة كود المحفظة
-app.post('/api/verify-wallet-code', async (req, res) => {
+app.post('/api/payments/verify-wallet-code', async (req, res) => {
   try {
     const { code, walletId, amount } = req.body;
+    
+    if (!code || !walletId || !amount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ الكود، معرف المحفظة، والمبلغ مطلوبة' 
+      });
+    }
     
     // 1. التحقق من الكود في قاعدة البيانات
     const { data: walletCode, error } = await supabase
@@ -48,7 +361,7 @@ app.post('/api/verify-wallet-code', async (req, res) => {
       .eq('code', code)
       .eq('wallet_id', walletId)
       .eq('is_used', false)
-      .single();
+      .maybeSingle();
     
     if (error || !walletCode) {
       return res.status(400).json({
@@ -57,7 +370,16 @@ app.post('/api/verify-wallet-code', async (req, res) => {
       });
     }
     
-    // 2. التحقق من المبلغ
+    // 2. التحقق من انتهاء الصلاحية
+    const expiresAt = new Date(walletCode.expires_at);
+    if (expiresAt < new Date()) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ انتهت صلاحية الكود'
+      });
+    }
+    
+    // 3. التحقق من المبلغ
     if (walletCode.amount < amount) {
       return res.status(400).json({
         success: false,
@@ -72,17 +394,25 @@ app.post('/api/verify-wallet-code', async (req, res) => {
     });
     
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '❌ حدث خطأ في الخادم'
+    console.error('❌ خطأ في التحقق من الكود:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
     });
   }
 });
 
 // ✅ تفعيل الاشتراك
-app.post('/api/activate-subscription', async (req, res) => {
+app.post('/api/payments/activate-subscription', async (req, res) => {
   try {
     const { userId, subscriptionId, code, walletId, amount } = req.body;
+    
+    if (!userId || !subscriptionId || !code || !walletId || !amount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ جميع الحقول مطلوبة' 
+      });
+    }
     
     // 1. التحقق من الكود
     const { data: walletCode, error: codeError } = await supabase
@@ -91,7 +421,7 @@ app.post('/api/activate-subscription', async (req, res) => {
       .eq('code', code)
       .eq('wallet_id', walletId)
       .eq('is_used', false)
-      .single();
+      .maybeSingle();
     
     if (codeError || !walletCode) {
       return res.status(400).json({
@@ -100,76 +430,955 @@ app.post('/api/activate-subscription', async (req, res) => {
       });
     }
     
-    // 2. تفعيل الاشتراك
+    // 2. جلب تفاصيل الباقة
+    const { data: subscription, error: subError } = await supabase
+      .from('subscriptions')
+      .select('*')
+      .eq('id', subscriptionId)
+      .maybeSingle();
+    
+    if (subError || !subscription) {
+      return res.status(404).json({
+        success: false,
+        message: '❌ الباقة غير موجودة'
+      });
+    }
+    
+    // 3. إلغاء تفعيل الاشتراكات السابقة
+    await supabase
+      .from('user_subscriptions')
+      .update({ is_active: false })
+      .eq('user_id', userId);
+    
+    // 4. تفعيل الاشتراك الجديد
     const startDate = new Date();
     const endDate = new Date();
-    endDate.setDate(endDate.getDate() + 30); // 30 يوم
+    endDate.setDate(endDate.getDate() + subscription.duration_days);
     
-    const { data: subscription, error: subError } = await supabase
+    const { data: userSubscription, error: insertError } = await supabase
       .from('user_subscriptions')
       .insert({
-        user_id: parseInt(userId),
+        user_id: userId,
         subscription_id: subscriptionId,
+        subscription_name: subscription.name,
+        duration_days: subscription.duration_days,
         start_date: startDate.toISOString(),
         end_date: endDate.toISOString(),
         is_active: true,
-        remaining_ads: 10,
-        remaining_featured_ads: 2
+        max_ads: subscription.max_ads,
+        max_featured_ads: subscription.max_featured_ads || 0,
+        max_notifications: subscription.max_notifications || 0,
+        used_ads: 0,
+        used_featured_ads: 0,
+        used_notifications: 0,
+        amount: amount,
+        currency: 'YER',
+        activation_source: 'wallet_code',
+        created_at: new Date().toISOString()
       })
-      .select();
+      .select()
+      .single();
     
-    if (subError) {
+    if (insertError) {
+      console.error('❌ فشل تفعيل الاشتراك:', insertError);
       return res.status(500).json({
         success: false,
         message: '❌ فشل تفعيل الاشتراك'
       });
     }
     
-    // 3. تحديث حالة الكود (استخدامه)
+    // 5. تحديث حالة الكود (استخدامه)
     await supabase
       .from('wallet_codes')
-      .update({ is_used: true, used_at: new Date().toISOString() })
+      .update({ 
+        is_used: true, 
+        used_at: new Date().toISOString(),
+        used_by_user_id: userId
+      })
       .eq('id', walletCode.id);
+    
+    // 6. تسجيل المعاملة
+    await supabase
+      .from('payment_transactions')
+      .insert({
+        user_id: userId,
+        amount: amount,
+        currency: 'YER',
+        status: 'completed',
+        type: 'subscription',
+        subscription_id: subscriptionId,
+        subscription_name: subscription.name,
+        payment_method: 'wallet',
+        payment_method_name: walletCode.wallet_name || 'محفظة',
+        transaction_number: `TXN_${Date.now()}`,
+        completed_at: new Date().toISOString(),
+        gateway_type: 'wallet_code',
+        purchase_code_id: walletCode.id,
+        confirmed_by: 'system',
+        confirmed_at: new Date().toISOString()
+      });
     
     res.json({
       success: true,
       message: '✅ تم تفعيل الاشتراك بنجاح',
-      subscription: subscription
+      subscription: userSubscription
     });
     
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '❌ حدث خطأ في الخادم'
+    console.error('❌ خطأ في تفعيل الاشتراك:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
     });
   }
 });
 
-// ✅ جلب الباقات المتاحة
-app.get('/api/subscriptions', async (req, res) => {
+// ✅ جلب معاملات المستخدم
+app.get('/api/payments/transactions/:userId', async (req, res) => {
   try {
-    const { data: subscriptions, error } = await supabase
-      .from('subscriptions')
+    const { userId } = req.params;
+    
+    const { data: transactions, error } = await supabase
+      .from('payment_transactions')
       .select('*')
-      .eq('is_active', true)
-      .order('duration_days', { ascending: true });
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
     
     if (error) {
-      return res.status(500).json({
-        success: false,
-        message: '❌ فشل جلب الباقات'
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب المعاملات' 
       });
     }
     
     res.json({
       success: true,
-      subscriptions: subscriptions
+      transactions: transactions || []
     });
     
   } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '❌ حدث خطأ في الخادم'
+    console.error('❌ خطأ في جلب المعاملات:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ============================================
+// 🏦 3. مجموعة المحافظ (Wallets)
+// ============================================
+
+// ✅ جلب المحافظ المتاحة
+app.get('/api/wallets/available', async (req, res) => {
+  try {
+    const { data: wallets, error } = await supabase
+      .from('wallets')
+      .select(`
+        *,
+        wallet_types:wallet_type_id (
+          id,
+          name,
+          name_ar,
+          currency_code,
+          currency_symbol,
+          icon_url,
+          color_code
+        )
+      `)
+      .eq('is_active', true);
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب المحافظ' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      wallets: wallets || []
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب المحافظ:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ جلب رصيد المستخدم في محفظة
+app.get('/api/wallets/balance/:userId/:walletId', async (req, res) => {
+  try {
+    const { userId, walletId } = req.params;
+    
+    const { data: userWallet, error } = await supabase
+      .from('user_wallets')
+      .select('balance, is_verified, is_primary')
+      .eq('user_id', userId)
+      .eq('wallet_id', walletId)
+      .maybeSingle();
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب الرصيد' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      balance: userWallet?.balance || 0,
+      is_verified: userWallet?.is_verified || false,
+      is_primary: userWallet?.is_primary || false
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب الرصيد:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ خصم رصيد من المحفظة
+app.post('/api/wallets/deduct-balance', async (req, res) => {
+  try {
+    const { userId, walletId, amount, transactionType, referenceId, description } = req.body;
+    
+    if (!userId || !walletId || !amount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ جميع الحقول مطلوبة' 
+      });
+    }
+    
+    // 1. جلب محفظة المستخدم
+    const { data: userWallet, error: walletError } = await supabase
+      .from('user_wallets')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('wallet_id', walletId)
+      .maybeSingle();
+    
+    if (walletError || !userWallet) {
+      return res.status(404).json({ 
+        success: false, 
+        message: '❌ المحفظة غير موجودة' 
+      });
+    }
+    
+    // 2. التحقق من الرصيد
+    if (userWallet.balance < amount) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ الرصيد غير كافٍ' 
+      });
+    }
+    
+    // 3. تحديث الرصيد
+    const newBalance = userWallet.balance - amount;
+    const { error: updateError } = await supabase
+      .from('user_wallets')
+      .update({ 
+        balance: newBalance,
+        last_used_at: new Date().toISOString()
+      })
+      .eq('id', userWallet.id);
+    
+    if (updateError) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل تحديث الرصيد' 
+      });
+    }
+    
+    // 4. تسجيل المعاملة
+    const { error: transactionError } = await supabase
+      .from('wallet_transactions')
+      .insert({
+        user_wallet_id: userWallet.id,
+        type: transactionType || 'deduction',
+        amount: -amount,
+        balance_before: userWallet.balance,
+        balance_after: newBalance,
+        status: 'completed',
+        related_transaction_id: referenceId,
+        description: description || `خصم ${amount} من المحفظة`,
+        completed_at: new Date().toISOString()
+      });
+    
+    if (transactionError) {
+      console.error('❌ فشل تسجيل المعاملة:', transactionError);
+    }
+    
+    res.json({
+      success: true,
+      message: '✅ تم خصم الرصيد بنجاح',
+      data: {
+        new_balance: newBalance,
+        deducted_amount: amount
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في خصم الرصيد:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ============================================
+// 👤 4. مجموعة المستخدمين (Users)
+// ============================================
+
+// ✅ جلب بيانات المستخدم
+app.get('/api/users/profile/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
+    
+    if (error || !user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: '❌ المستخدم غير موجود' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      user: user
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب المستخدم:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ تحديث بيانات المستخدم
+app.put('/api/users/profile/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { name, phone, business_name, specializations, full_name, display_phone } = req.body;
+    
+    const updateData = {};
+    if (name) updateData.name = name;
+    if (phone) updateData.phone = phone;
+    if (business_name !== undefined) updateData.business_name = business_name;
+    if (specializations) updateData.specializations = specializations;
+    if (full_name) updateData.full_name = full_name;
+    if (display_phone) updateData.display_phone = display_phone;
+    updateData.updated_at = new Date().toISOString();
+    
+    const { data: user, error } = await supabase
+      .from('users')
+      .update(updateData)
+      .eq('id', userId)
+      .select()
+      .single();
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: `❌ فشل تحديث البيانات: ${error.message}` 
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: '✅ تم تحديث البيانات بنجاح',
+      user: user
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في تحديث المستخدم:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ جلب تخصصات المستخدم
+app.get('/api/users/specializations/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const { data: user, error } = await supabase
+      .from('users')
+      .select('specializations')
+      .eq('id', userId)
+      .maybeSingle();
+    
+    if (error || !user) {
+      return res.status(404).json({ 
+        success: false, 
+        message: '❌ المستخدم غير موجود' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      specializations: user.specializations || []
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب التخصصات:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ تحديث تخصصات المستخدم
+app.put('/api/users/specializations/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { specializations } = req.body;
+    
+    if (!specializations || !Array.isArray(specializations)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ التخصصات يجب أن تكون مصفوفة' 
+      });
+    }
+    
+    const { data: user, error } = await supabase
+      .from('users')
+      .update({ specializations })
+      .eq('id', userId)
+      .select()
+      .single();
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: `❌ فشل تحديث التخصصات: ${error.message}` 
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: '✅ تم تحديث التخصصات بنجاح',
+      specializations: user.specializations
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في تحديث التخصصات:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ============================================
+// 🛒 5. مجموعة المنتجات والطلبات (Products & Orders)
+// ============================================
+
+// ✅ جلب قائمة المنتجات
+app.get('/api/products', async (req, res) => {
+  try {
+    const { category, seller, limit = 50, offset = 0 } = req.query;
+    
+    let query = supabase
+      .from('products')
+      .select('*')
+      .eq('status', 'active')
+      .order('posted_date', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+    
+    if (category) {
+      query = query.eq('category_id', category);
+    }
+    
+    if (seller) {
+      query = query.eq('seller_id', seller);
+    }
+    
+    const { data: products, error } = await query;
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب المنتجات' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      products: products || [],
+      count: products?.length || 0
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب المنتجات:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ جلب تفاصيل منتج
+app.get('/api/products/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const { data: product, error } = await supabase
+      .from('products')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    
+    if (error || !product) {
+      return res.status(404).json({ 
+        success: false, 
+        message: '❌ المنتج غير موجود' 
+      });
+    }
+    
+    // زيادة عدد المشاهدات
+    await supabase
+      .from('products')
+      .update({ views: (product.views || 0) + 1 })
+      .eq('id', id);
+    
+    res.json({
+      success: true,
+      product: product
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب المنتج:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ إضافة منتج جديد
+app.post('/api/products', async (req, res) => {
+  try {
+    const productData = req.body;
+    
+    if (!productData.seller_id || !productData.title) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ البائع والعنوان مطلوبان' 
+      });
+    }
+    
+    const { data: product, error } = await supabase
+      .from('products')
+      .insert({
+        ...productData,
+        posted_date: new Date().toISOString(),
+        status: 'pending'
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: `❌ فشل إضافة المنتج: ${error.message}` 
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: '✅ تم إضافة المنتج بنجاح',
+      product: product
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في إضافة المنتج:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ إنشاء طلب شراء
+app.post('/api/orders', async (req, res) => {
+  try {
+    const { 
+      user_id, product_id, quantity, notes, address, phone, 
+      payment_method, is_paid_online, product_title, product_price, 
+      product_image, seller_id, seller_name 
+    } = req.body;
+    
+    if (!user_id || !product_id || !quantity) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ البيانات المطلوبة غير مكتملة' 
+      });
+    }
+    
+    const totalPrice = product_price * quantity;
+    const orderId = `ORD_${Date.now()}`;
+    
+    const { data: order, error } = await supabase
+      .from('orders')
+      .insert({
+        id: orderId,
+        user_id: user_id,
+        product_id: product_id,
+        product_title: product_title || '',
+        product_price: product_price || 0,
+        product_image: product_image || '',
+        quantity: quantity,
+        total_price: totalPrice,
+        notes: notes || '',
+        address: address || '',
+        phone: phone || '',
+        payment_method: payment_method || 'cash',
+        is_paid_online: is_paid_online || false,
+        status: 'pending',
+        seller_id: seller_id || '',
+        seller_name: seller_name || '',
+        created_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: `❌ فشل إنشاء الطلب: ${error.message}` 
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: '✅ تم إنشاء الطلب بنجاح',
+      order: order
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في إنشاء الطلب:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ جلب طلبات المستخدم
+app.get('/api/orders/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    const { data: orders, error } = await supabase
+      .from('orders')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب الطلبات' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      orders: orders || []
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب الطلبات:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ تحديث حالة الطلب
+app.put('/api/orders/:orderId/status', async (req, res) => {
+  try {
+    const { orderId } = req.params;
+    const { status, notes } = req.body;
+    
+    if (!status) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ الحالة مطلوبة' 
+      });
+    }
+    
+    // جلب الحالة القديمة
+    const { data: oldOrder, error: fetchError } = await supabase
+      .from('orders')
+      .select('status')
+      .eq('id', orderId)
+      .maybeSingle();
+    
+    if (fetchError || !oldOrder) {
+      return res.status(404).json({ 
+        success: false, 
+        message: '❌ الطلب غير موجود' 
+      });
+    }
+    
+    // تحديث الحالة
+    const { data: order, error } = await supabase
+      .from('orders')
+      .update({ 
+        status: status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', orderId)
+      .select()
+      .single();
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: `❌ فشل تحديث الحالة: ${error.message}` 
+      });
+    }
+    
+    // تسجيل تاريخ الحالة
+    await supabase
+      .from('order_status_history')
+      .insert({
+        order_id: orderId,
+        old_status: oldOrder.status,
+        new_status: status,
+        notes: notes || '',
+        created_at: new Date().toISOString()
+      });
+    
+    res.json({
+      success: true,
+      message: '✅ تم تحديث حالة الطلب',
+      order: order
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في تحديث حالة الطلب:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ============================================
+// 🔔 6. مجموعة الإشعارات (Notifications)
+// ============================================
+
+// ✅ جلب إشعارات المستخدم
+app.get('/api/notifications/:userId', async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { limit = 50, offset = 0 } = req.query;
+    
+    const { data: notifications, error } = await supabase
+      .from('notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب الإشعارات' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      notifications: notifications || []
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب الإشعارات:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ تحديث حالة قراءة الإشعار
+app.put('/api/notifications/:id/read', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const { data: notification, error } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: `❌ فشل تحديث الإشعار: ${error.message}` 
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: '✅ تم تحديث الإشعار',
+      notification: notification
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في تحديث الإشعار:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ============================================
+// 📊 7. مجموعة المدير (Admin)
+// ============================================
+
+// ✅ إحصائيات النظام
+app.get('/api/admin/stats', async (req, res) => {
+  try {
+    // عدد المستخدمين
+    const { count: usersCount } = await supabase
+      .from('users')
+      .select('*', { count: 'exact', head: true });
+    
+    // عدد المنتجات النشطة
+    const { count: productsCount } = await supabase
+      .from('products')
+      .select('*', { count: 'exact', head: true })
+      .eq('status', 'active');
+    
+    // عدد الطلبات اليوم
+    const today = new Date().toISOString().split('T')[0];
+    const { count: todayOrders } = await supabase
+      .from('orders')
+      .select('*', { count: 'exact', head: true })
+      .gte('created_at', `${today}T00:00:00`)
+      .lt('created_at', `${today}T23:59:59`);
+    
+    // إجمالي الإيرادات
+    const { data: revenue } = await supabase
+      .from('payment_transactions')
+      .select('amount')
+      .eq('status', 'completed');
+    
+    const totalRevenue = revenue?.reduce((sum, r) => sum + r.amount, 0) || 0;
+    
+    // الاشتراكات النشطة
+    const { count: activeSubscriptions } = await supabase
+      .from('user_subscriptions')
+      .select('*', { count: 'exact', head: true })
+      .eq('is_active', true);
+    
+    res.json({
+      success: true,
+      stats: {
+        totalUsers: usersCount || 0,
+        totalProducts: productsCount || 0,
+        todayOrders: todayOrders || 0,
+        totalRevenue: totalRevenue,
+        activeSubscriptions: activeSubscriptions || 0
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب الإحصائيات:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ جلب قائمة المستخدمين (للمدير)
+app.get('/api/admin/users', async (req, res) => {
+  try {
+    const { limit = 50, offset = 0 } = req.query;
+    
+    const { data: users, error } = await supabase
+      .from('users')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب المستخدمين' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      users: users || [],
+      count: users?.length || 0
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب المستخدمين:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ جلب جميع المعاملات (للمدير)
+app.get('/api/admin/transactions', async (req, res) => {
+  try {
+    const { limit = 50, offset = 0 } = req.query;
+    
+    const { data: transactions, error } = await supabase
+      .from('payment_transactions')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب المعاملات' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      transactions: transactions || [],
+      count: transactions?.length || 0
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب المعاملات:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
     });
   }
 });
