@@ -28,7 +28,7 @@ app.use(express.json({ limit: '10mb' }));
 // 📧 إعداد Brevo API
 // ============================================
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
-const BREVO_FROM_EMAIL = process.env.BREVO_FROM_EMAIL || 'iiuuyy2021@gmail.com';
+const BREVO_FROM_EMAIL = process.env.BREVO_FROM_EMAIL || 'aillaillabdullah85@gmail.com';
 const BREVO_FROM_NAME = process.env.BREVO_FROM_NAME || 'Almedwahi';
 
 // ✅ دالة إرسال إيميل عبر Brevo API
