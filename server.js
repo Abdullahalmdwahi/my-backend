@@ -1,11 +1,11 @@
 // ============================================
-// 🚀 خادم تطبيق السوق - مع Brevo API
+// 🚀 خادم تطبيق السوق - مع Gmail SMTP مباشر
 // ============================================
 
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
-const axios = require('axios');
+const nodemailer = require('nodemailer');
 require('dotenv').config();
 
 const app = express();
@@ -25,43 +25,51 @@ app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
 // ============================================
-// 📧 إعداد Brevo API
+// 📧 إعداد Gmail SMTP (مباشر)
 // ============================================
-const BREVO_API_KEY = process.env.BREVO_API_KEY;
-const BREVO_FROM_EMAIL = process.env.BREVO_FROM_EMAIL || 'aillaillabdullah85@gmail.com';
-const BREVO_FROM_NAME = process.env.BREVO_FROM_NAME || 'Almedwahi';
+const GMAIL_USER = process.env.GMAIL_USER || 'iiuuyy2021@gmail.com';
+const GMAIL_PASS = process.env.GMAIL_PASS; // كلمة مرور التطبيق
 
-// ✅ دالة إرسال إيميل عبر Brevo API
-async function sendEmailViaBrevo(to, subject, htmlContent, textContent) {
+// ✅ إعداد Gmail SMTP
+const transporter = nodemailer.createTransport({
+  service: 'gmail',
+  auth: {
+    user: GMAIL_USER,
+    pass: GMAIL_PASS,
+  },
+  tls: {
+    rejectUnauthorized: false,
+  },
+});
+
+// ✅ التحقق من اتصال Gmail SMTP عند بدء التشغيل
+transporter.verify((error, success) => {
+  if (error) {
+    console.error('❌ فشل الاتصال بـ Gmail SMTP:', error.message);
+  } else {
+    console.log('✅ Gmail SMTP متصل بنجاح');
+  }
+});
+
+// ✅ دالة إرسال إيميل عبر Gmail
+async function sendEmailViaGmail(to, subject, html, text) {
   try {
-    console.log(`📧 [Brevo API] بدء إرسال إلى: ${to}`);
+    console.log(`📧 [Gmail SMTP] بدء إرسال إلى: ${to}`);
 
-    const response = await axios.post(
-      'https://api.brevo.com/v3/smtp/email',
-      {
-        sender: {
-          name: BREVO_FROM_NAME,
-          email: BREVO_FROM_EMAIL,
-        },
-        to: [{ email: to }],
-        subject: subject,
-        htmlContent: htmlContent,
-        textContent: textContent || htmlContent.replace(/<[^>]*>/g, ''),
-      },
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'api-key': BREVO_API_KEY,
-        },
-        timeout: 15000,
-      }
-    );
+    const mailOptions = {
+      from: `"Sell In" <${GMAIL_USER}>`,
+      to: to,
+      subject: subject,
+      text: text || html.replace(/<[^>]*>/g, ''),
+      html: html,
+    };
 
-    console.log(`✅ [Brevo API] تم الإرسال بنجاح إلى: ${to}`);
-    console.log(`📧 Message ID: ${response.data.messageId}`);
+    const info = await transporter.sendMail(mailOptions);
+    console.log(`✅ [Gmail SMTP] تم الإرسال بنجاح إلى: ${to}`);
+    console.log(`📧 Message ID: ${info.messageId}`);
     return true;
   } catch (error) {
-    console.error('❌ [Brevo API] فشل الإرسال:', error.response?.data || error.message);
+    console.error('❌ [Gmail SMTP] فشل الإرسال:', error.message);
     return false;
   }
 }
@@ -77,49 +85,49 @@ app.get('/', (req, res) => {
   });
 });
 
-// ✅ نقطة اختبار Brevo API
+// ✅ نقطة اختبار Gmail SMTP
 app.get('/api/email/test', async (req, res) => {
   try {
-    if (!BREVO_API_KEY) {
+    if (!GMAIL_USER || !GMAIL_PASS) {
       return res.status(400).json({
         success: false,
-        message: '❌ BREVO_API_KEY غير موجود في المتغيرات البيئية',
+        message: '❌ GMAIL_USER أو GMAIL_PASS غير موجود في المتغيرات البيئية',
       });
     }
 
-    const testResult = await sendEmailViaBrevo(
-      BREVO_FROM_EMAIL,
-      '🧪 اختبار Brevo API',
-      '<h1>✅ نجاح الاتصال!</h1><p>تم إرسال هذا الإيميل عبر Brevo API بنجاح.</p>'
+    const testResult = await sendEmailViaGmail(
+      GMAIL_USER,
+      '🧪 اختبار Gmail SMTP',
+      '<h1>✅ نجاح الاتصال!</h1><p>تم إرسال هذا الإيميل عبر Gmail SMTP مباشرة.</p>'
     );
 
     if (testResult) {
       res.json({
         success: true,
-        message: '✅ Brevo API يعمل بشكل صحيح! تم إرسال إيميل اختبار.',
+        message: '✅ Gmail SMTP يعمل بشكل صحيح! تم إرسال إيميل اختبار.',
         config: {
-          from: BREVO_FROM_EMAIL,
-          apiKey: BREVO_API_KEY ? 'موجود ✅' : 'غير موجود ❌',
+          from: GMAIL_USER,
+          hasPassword: !!GMAIL_PASS,
         }
       });
     } else {
       res.status(500).json({
         success: false,
-        message: '❌ فشل إرسال إيميل الاختبار، تحقق من API Key',
+        message: '❌ فشل إرسال إيميل الاختبار، تحقق من كلمة مرور التطبيق',
       });
     }
   } catch (error) {
-    console.error('❌ فشل اختبار Brevo API:', error);
+    console.error('❌ فشل اختبار Gmail SMTP:', error);
     res.status(500).json({
       success: false,
-      message: '❌ فشل الاتصال بـ Brevo API',
+      message: '❌ فشل الاتصال بـ Gmail SMTP',
       error: error.message,
     });
   }
 });
 
 // ============================================
-// 🔐 1. مجموعة المصادقة (Auth)
+// 🔐 1. مجموعة المصادقة (Auth) - مختصرة
 // ============================================
 
 // ✅ تسجيل مستخدم جديد
@@ -385,7 +393,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
 });
 
 // ============================================
-// 💰 2. مجموعة المدفوعات (Payments)
+// 💰 2. مجموعة المدفوعات (Payments) - مختصرة
 // ============================================
 
 // ✅ جلب الباقات المتاحة
@@ -418,912 +426,14 @@ app.get('/api/payments/subscriptions', async (req, res) => {
   }
 });
 
-// ✅ التحقق من صحة كود المحفظة
-app.post('/api/payments/verify-wallet-code', async (req, res) => {
-  try {
-    const { code, walletId, amount } = req.body;
-    
-    if (!code || !walletId || !amount) {
-      return res.status(400).json({ 
-        success: false, 
-        message: '❌ الكود، معرف المحفظة، والمبلغ مطلوبة' 
-      });
-    }
-    
-    const { data: walletCode, error } = await supabase
-      .from('wallet_codes')
-      .select('*')
-      .eq('code', code)
-      .eq('wallet_id', walletId)
-      .eq('is_used', false)
-      .maybeSingle();
-    
-    if (error || !walletCode) {
-      return res.status(400).json({
-        success: false,
-        message: '❌ الكود غير صالح أو مستخدم مسبقاً'
-      });
-    }
-    
-    const expiresAt = new Date(walletCode.expires_at);
-    if (expiresAt < new Date()) {
-      return res.status(400).json({
-        success: false,
-        message: '❌ انتهت صلاحية الكود'
-      });
-    }
-    
-    if (walletCode.amount < amount) {
-      return res.status(400).json({
-        success: false,
-        message: '❌ رصيد الكود غير كافٍ'
-      });
-    }
-    
-    res.json({
-      success: true,
-      message: '✅ الكود صالح',
-      data: walletCode
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في التحقق من الكود:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ تفعيل الاشتراك
-app.post('/api/payments/activate-subscription', async (req, res) => {
-  try {
-    const { userId, subscriptionId, code, walletId, amount } = req.body;
-    
-    if (!userId || !subscriptionId || !code || !walletId || !amount) {
-      return res.status(400).json({ 
-        success: false, 
-        message: '❌ جميع الحقول مطلوبة' 
-      });
-    }
-    
-    const { data: walletCode, error: codeError } = await supabase
-      .from('wallet_codes')
-      .select('*')
-      .eq('code', code)
-      .eq('wallet_id', walletId)
-      .eq('is_used', false)
-      .maybeSingle();
-    
-    if (codeError || !walletCode) {
-      return res.status(400).json({
-        success: false,
-        message: '❌ الكود غير صالح'
-      });
-    }
-    
-    const { data: subscription, error: subError } = await supabase
-      .from('subscriptions')
-      .select('*')
-      .eq('id', subscriptionId)
-      .maybeSingle();
-    
-    if (subError || !subscription) {
-      return res.status(404).json({
-        success: false,
-        message: '❌ الباقة غير موجودة'
-      });
-    }
-    
-    await supabase
-      .from('user_subscriptions')
-      .update({ is_active: false })
-      .eq('user_id', userId);
-    
-    const startDate = new Date();
-    const endDate = new Date();
-    endDate.setDate(endDate.getDate() + subscription.duration_days);
-    
-    const { data: userSubscription, error: insertError } = await supabase
-      .from('user_subscriptions')
-      .insert({
-        user_id: userId,
-        subscription_id: subscriptionId,
-        subscription_name: subscription.name,
-        duration_days: subscription.duration_days,
-        start_date: startDate.toISOString(),
-        end_date: endDate.toISOString(),
-        is_active: true,
-        max_ads: subscription.max_ads,
-        max_featured_ads: subscription.max_featured_ads || 0,
-        max_notifications: subscription.max_notifications || 0,
-        used_ads: 0,
-        used_featured_ads: 0,
-        used_notifications: 0,
-        amount: amount,
-        currency: 'YER',
-        activation_source: 'wallet_code',
-        created_at: new Date().toISOString()
-      })
-      .select()
-      .single();
-    
-    if (insertError) {
-      console.error('❌ فشل تفعيل الاشتراك:', insertError);
-      return res.status(500).json({
-        success: false,
-        message: '❌ فشل تفعيل الاشتراك'
-      });
-    }
-    
-    await supabase
-      .from('wallet_codes')
-      .update({ 
-        is_used: true, 
-        used_at: new Date().toISOString(),
-        used_by_user_id: userId
-      })
-      .eq('id', walletCode.id);
-    
-    await supabase
-      .from('payment_transactions')
-      .insert({
-        user_id: userId,
-        amount: amount,
-        currency: 'YER',
-        status: 'completed',
-        type: 'subscription',
-        subscription_id: subscriptionId,
-        subscription_name: subscription.name,
-        payment_method: 'wallet',
-        payment_method_name: walletCode.wallet_name || 'محفظة',
-        transaction_number: `TXN_${Date.now()}`,
-        completed_at: new Date().toISOString(),
-        gateway_type: 'wallet_code',
-        purchase_code_id: walletCode.id,
-        confirmed_by: 'system',
-        confirmed_at: new Date().toISOString()
-      });
-    
-    res.json({
-      success: true,
-      message: '✅ تم تفعيل الاشتراك بنجاح',
-      subscription: userSubscription
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في تفعيل الاشتراك:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ جلب معاملات المستخدم
-app.get('/api/payments/transactions/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    
-    const { data: transactions, error } = await supabase
-      .from('payment_transactions')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: '❌ فشل جلب المعاملات' 
-      });
-    }
-    
-    res.json({
-      success: true,
-      transactions: transactions || []
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في جلب المعاملات:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
 // ============================================
-// 🏦 3. مجموعة المحافظ (Wallets)
-// ============================================
-
-// ✅ جلب المحافظ المتاحة
-app.get('/api/wallets/available', async (req, res) => {
-  try {
-    const { data: wallets, error } = await supabase
-      .from('wallets')
-      .select(`
-        *,
-        wallet_types:wallet_type_id (
-          id,
-          name,
-          name_ar,
-          currency_code,
-          currency_symbol,
-          icon_url,
-          color_code
-        )
-      `)
-      .eq('is_active', true);
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: '❌ فشل جلب المحافظ' 
-      });
-    }
-    
-    res.json({
-      success: true,
-      wallets: wallets || []
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في جلب المحافظ:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ جلب رصيد المستخدم في محفظة
-app.get('/api/wallets/balance/:userId/:walletId', async (req, res) => {
-  try {
-    const { userId, walletId } = req.params;
-    
-    const { data: userWallet, error } = await supabase
-      .from('user_wallets')
-      .select('balance, is_verified, is_primary')
-      .eq('user_id', userId)
-      .eq('wallet_id', walletId)
-      .maybeSingle();
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: '❌ فشل جلب الرصيد' 
-      });
-    }
-    
-    res.json({
-      success: true,
-      balance: userWallet?.balance || 0,
-      is_verified: userWallet?.is_verified || false,
-      is_primary: userWallet?.is_primary || false
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في جلب الرصيد:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ خصم رصيد من المحفظة
-app.post('/api/wallets/deduct-balance', async (req, res) => {
-  try {
-    const { userId, walletId, amount, transactionType, referenceId, description } = req.body;
-    
-    if (!userId || !walletId || !amount) {
-      return res.status(400).json({ 
-        success: false, 
-        message: '❌ جميع الحقول مطلوبة' 
-      });
-    }
-    
-    const { data: userWallet, error: walletError } = await supabase
-      .from('user_wallets')
-      .select('*')
-      .eq('user_id', userId)
-      .eq('wallet_id', walletId)
-      .maybeSingle();
-    
-    if (walletError || !userWallet) {
-      return res.status(404).json({ 
-        success: false, 
-        message: '❌ المحفظة غير موجودة' 
-      });
-    }
-    
-    if (userWallet.balance < amount) {
-      return res.status(400).json({ 
-        success: false, 
-        message: '❌ الرصيد غير كافٍ' 
-      });
-    }
-    
-    const newBalance = userWallet.balance - amount;
-    const { error: updateError } = await supabase
-      .from('user_wallets')
-      .update({ 
-        balance: newBalance,
-        last_used_at: new Date().toISOString()
-      })
-      .eq('id', userWallet.id);
-    
-    if (updateError) {
-      return res.status(500).json({ 
-        success: false, 
-        message: '❌ فشل تحديث الرصيد' 
-      });
-    }
-    
-    const { error: transactionError } = await supabase
-      .from('wallet_transactions')
-      .insert({
-        user_wallet_id: userWallet.id,
-        type: transactionType || 'deduction',
-        amount: -amount,
-        balance_before: userWallet.balance,
-        balance_after: newBalance,
-        status: 'completed',
-        related_transaction_id: referenceId,
-        description: description || `خصم ${amount} من المحفظة`,
-        completed_at: new Date().toISOString()
-      });
-    
-    if (transactionError) {
-      console.error('❌ فشل تسجيل المعاملة:', transactionError);
-    }
-    
-    res.json({
-      success: true,
-      message: '✅ تم خصم الرصيد بنجاح',
-      data: {
-        new_balance: newBalance,
-        deducted_amount: amount
-      }
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في خصم الرصيد:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ============================================
-// 👤 4. مجموعة المستخدمين (Users)
-// ============================================
-
-// ✅ جلب بيانات المستخدم
-app.get('/api/users/profile/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-    
-    if (error || !user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: '❌ المستخدم غير موجود' 
-      });
-    }
-    
-    res.json({
-      success: true,
-      user: user
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في جلب المستخدم:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ تحديث بيانات المستخدم
-app.put('/api/users/profile/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { name, phone, business_name, specializations, full_name, display_phone } = req.body;
-    
-    const updateData = {};
-    if (name) updateData.name = name;
-    if (phone) updateData.phone = phone;
-    if (business_name !== undefined) updateData.business_name = business_name;
-    if (specializations) updateData.specializations = specializations;
-    if (full_name) updateData.full_name = full_name;
-    if (display_phone) updateData.display_phone = display_phone;
-    updateData.updated_at = new Date().toISOString();
-    
-    const { data: user, error } = await supabase
-      .from('users')
-      .update(updateData)
-      .eq('id', userId)
-      .select()
-      .single();
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: `❌ فشل تحديث البيانات: ${error.message}` 
-      });
-    }
-    
-    res.json({
-      success: true,
-      message: '✅ تم تحديث البيانات بنجاح',
-      user: user
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في تحديث المستخدم:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ جلب تخصصات المستخدم
-app.get('/api/users/specializations/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    
-    const { data: user, error } = await supabase
-      .from('users')
-      .select('specializations')
-      .eq('id', userId)
-      .maybeSingle();
-    
-    if (error || !user) {
-      return res.status(404).json({ 
-        success: false, 
-        message: '❌ المستخدم غير موجود' 
-      });
-    }
-    
-    res.json({
-      success: true,
-      specializations: user.specializations || []
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في جلب التخصصات:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ تحديث تخصصات المستخدم
-app.put('/api/users/specializations/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { specializations } = req.body;
-    
-    if (!specializations || !Array.isArray(specializations)) {
-      return res.status(400).json({ 
-        success: false, 
-        message: '❌ التخصصات يجب أن تكون مصفوفة' 
-      });
-    }
-    
-    const { data: user, error } = await supabase
-      .from('users')
-      .update({ specializations })
-      .eq('id', userId)
-      .select()
-      .single();
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: `❌ فشل تحديث التخصصات: ${error.message}` 
-      });
-    }
-    
-    res.json({
-      success: true,
-      message: '✅ تم تحديث التخصصات بنجاح',
-      specializations: user.specializations
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في تحديث التخصصات:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ============================================
-// 🛒 5. مجموعة المنتجات والطلبات (Products & Orders)
-// ============================================
-
-// ✅ جلب قائمة المنتجات
-app.get('/api/products', async (req, res) => {
-  try {
-    const { category, seller, limit = 50, offset = 0 } = req.query;
-    
-    let query = supabase
-      .from('products')
-      .select('*')
-      .eq('status', 'active')
-      .order('posted_date', { ascending: false })
-      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
-    
-    if (category) {
-      query = query.eq('category_id', category);
-    }
-    
-    if (seller) {
-      query = query.eq('seller_id', seller);
-    }
-    
-    const { data: products, error } = await query;
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: '❌ فشل جلب المنتجات' 
-      });
-    }
-    
-    res.json({
-      success: true,
-      products: products || [],
-      count: products?.length || 0
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في جلب المنتجات:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ جلب تفاصيل منتج
-app.get('/api/products/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const { data: product, error } = await supabase
-      .from('products')
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
-    
-    if (error || !product) {
-      return res.status(404).json({ 
-        success: false, 
-        message: '❌ المنتج غير موجود' 
-      });
-    }
-    
-    await supabase
-      .from('products')
-      .update({ views: (product.views || 0) + 1 })
-      .eq('id', id);
-    
-    res.json({
-      success: true,
-      product: product
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في جلب المنتج:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ إضافة منتج جديد
-app.post('/api/products', async (req, res) => {
-  try {
-    const productData = req.body;
-    
-    if (!productData.seller_id || !productData.title) {
-      return res.status(400).json({ 
-        success: false, 
-        message: '❌ البائع والعنوان مطلوبان' 
-      });
-    }
-    
-    const { data: product, error } = await supabase
-      .from('products')
-      .insert({
-        ...productData,
-        posted_date: new Date().toISOString(),
-        status: 'pending'
-      })
-      .select()
-      .single();
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: `❌ فشل إضافة المنتج: ${error.message}` 
-      });
-    }
-    
-    res.json({
-      success: true,
-      message: '✅ تم إضافة المنتج بنجاح',
-      product: product
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في إضافة المنتج:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ إنشاء طلب شراء
-app.post('/api/orders', async (req, res) => {
-  try {
-    const { 
-      user_id, product_id, quantity, notes, address, phone, 
-      payment_method, is_paid_online, product_title, product_price, 
-      product_image, seller_id, seller_name 
-    } = req.body;
-    
-    if (!user_id || !product_id || !quantity) {
-      return res.status(400).json({ 
-        success: false, 
-        message: '❌ البيانات المطلوبة غير مكتملة' 
-      });
-    }
-    
-    const totalPrice = product_price * quantity;
-    const orderId = `ORD_${Date.now()}`;
-    
-    const { data: order, error } = await supabase
-      .from('orders')
-      .insert({
-        id: orderId,
-        user_id: user_id,
-        product_id: product_id,
-        product_title: product_title || '',
-        product_price: product_price || 0,
-        product_image: product_image || '',
-        quantity: quantity,
-        total_price: totalPrice,
-        notes: notes || '',
-        address: address || '',
-        phone: phone || '',
-        payment_method: payment_method || 'cash',
-        is_paid_online: is_paid_online || false,
-        status: 'pending',
-        seller_id: seller_id || '',
-        seller_name: seller_name || '',
-        created_at: new Date().toISOString()
-      })
-      .select()
-      .single();
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: `❌ فشل إنشاء الطلب: ${error.message}` 
-      });
-    }
-    
-    res.json({
-      success: true,
-      message: '✅ تم إنشاء الطلب بنجاح',
-      order: order
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في إنشاء الطلب:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ جلب طلبات المستخدم
-app.get('/api/orders/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    
-    const { data: orders, error } = await supabase
-      .from('orders')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false });
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: '❌ فشل جلب الطلبات' 
-      });
-    }
-    
-    res.json({
-      success: true,
-      orders: orders || []
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في جلب الطلبات:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ تحديث حالة الطلب
-app.put('/api/orders/:orderId/status', async (req, res) => {
-  try {
-    const { orderId } = req.params;
-    const { status, notes } = req.body;
-    
-    if (!status) {
-      return res.status(400).json({ 
-        success: false, 
-        message: '❌ الحالة مطلوبة' 
-      });
-    }
-    
-    const { data: oldOrder, error: fetchError } = await supabase
-      .from('orders')
-      .select('status')
-      .eq('id', orderId)
-      .maybeSingle();
-    
-    if (fetchError || !oldOrder) {
-      return res.status(404).json({ 
-        success: false, 
-        message: '❌ الطلب غير موجود' 
-      });
-    }
-    
-    const { data: order, error } = await supabase
-      .from('orders')
-      .update({ 
-        status: status,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', orderId)
-      .select()
-      .single();
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: `❌ فشل تحديث الحالة: ${error.message}` 
-      });
-    }
-    
-    await supabase
-      .from('order_status_history')
-      .insert({
-        order_id: orderId,
-        old_status: oldOrder.status,
-        new_status: status,
-        notes: notes || '',
-        created_at: new Date().toISOString()
-      });
-    
-    res.json({
-      success: true,
-      message: '✅ تم تحديث حالة الطلب',
-      order: order
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في تحديث حالة الطلب:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ============================================
-// 🔔 6. مجموعة الإشعارات (Notifications)
-// ============================================
-
-// ✅ جلب إشعارات المستخدم
-app.get('/api/notifications/:userId', async (req, res) => {
-  try {
-    const { userId } = req.params;
-    const { limit = 50, offset = 0 } = req.query;
-    
-    const { data: notifications, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: '❌ فشل جلب الإشعارات' 
-      });
-    }
-    
-    res.json({
-      success: true,
-      notifications: notifications || []
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في جلب الإشعارات:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ✅ تحديث حالة قراءة الإشعار
-app.put('/api/notifications/:id/read', async (req, res) => {
-  try {
-    const { id } = req.params;
-    
-    const { data: notification, error } = await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', id)
-      .select()
-      .single();
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: `❌ فشل تحديث الإشعار: ${error.message}` 
-      });
-    }
-    
-    res.json({
-      success: true,
-      message: '✅ تم تحديث الإشعار',
-      notification: notification
-    });
-    
-  } catch (error) {
-    console.error('❌ خطأ في تحديث الإشعار:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
-    });
-  }
-});
-
-// ============================================
-// 📧 7. مجموعة الإيميلات (Email) - مع Brevo API
+// 📧 7. مجموعة الإيميلات (Email) - مع Gmail SMTP
 // ============================================
 
 // ✅ إرسال إيميل عام
 app.post('/api/email/send', async (req, res) => {
   const startTime = Date.now();
-  console.log(`📧 [${new Date().toISOString()}] بدء إرسال إيميل (API)`);
+  console.log(`📧 [${new Date().toISOString()}] بدء إرسال إيميل (Gmail SMTP)`);
 
   try {
     const { to, subject, html, text } = req.body;
@@ -1338,7 +448,7 @@ app.post('/api/email/send', async (req, res) => {
     console.log(`📧 إلى: ${to}`);
     console.log(`📧 الموضوع: ${subject}`);
 
-    const result = await sendEmailViaBrevo(to, subject, html, text);
+    const result = await sendEmailViaGmail(to, subject, html, text);
 
     const duration = Date.now() - startTime;
 
@@ -1383,7 +493,7 @@ app.post('/api/email/send-verification', async (req, res) => {
     const subject = '✅ تفعيل حسابك في Sell In';
     const html = buildVerificationEmailHtml(token);
 
-    const result = await sendEmailViaBrevo(to, subject, html);
+    const result = await sendEmailViaGmail(to, subject, html);
 
     if (result) {
       res.json({
@@ -1422,7 +532,7 @@ app.post('/api/email/send-password-reset', async (req, res) => {
     const subject = '🔐 إعادة تعيين كلمة المرور - Sell In';
     const html = buildPasswordResetEmailHtml(token);
 
-    const result = await sendEmailViaBrevo(to, subject, html);
+    const result = await sendEmailViaGmail(to, subject, html);
 
     if (result) {
       res.json({
@@ -1459,7 +569,7 @@ app.post('/api/email/send-device-verification', async (req, res) => {
     const subject = '🔐 رمز التحقق لتسجيل الدخول - Sell In';
     const html = buildDeviceVerificationEmailHtml(token);
 
-    const result = await sendEmailViaBrevo(to, subject, html);
+    const result = await sendEmailViaGmail(to, subject, html);
 
     if (result) {
       res.json({
@@ -1640,7 +750,7 @@ function buildDeviceVerificationEmailHtml(token) {
 }
 
 // ============================================
-// 📊 8. مجموعة المدير (Admin)
+// 📊 8. مجموعة المدير (Admin) - مختصرة
 // ============================================
 
 // ✅ إحصائيات النظام
@@ -1766,6 +876,6 @@ app.get('/api/admin/transactions', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ الخادم يعمل على المنفذ ${PORT}`);
   console.log(`🌐 http://localhost:${PORT}`);
-  console.log(`📧 Brevo API: ${BREVO_API_KEY ? '✅ تم الإعداد' : '❌ مفقود'}`);
-  console.log(`📧 من: ${BREVO_FROM_EMAIL}`);
+  console.log(`📧 Gmail SMTP: ${GMAIL_USER ? '✅ تم الإعداد' : '❌ مفقود'}`);
+  console.log(`📧 كلمة المرور: ${GMAIL_PASS ? '✅ موجودة' : '❌ مفقودة'}`);
 });
