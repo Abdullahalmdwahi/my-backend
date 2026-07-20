@@ -28,7 +28,7 @@ app.use(express.json({ limit: '10mb' }));
 // 📧 إعداد Gmail SMTP (مباشر)
 // ============================================
 const GMAIL_USER = process.env.GMAIL_USER || 'iiuuyy2021@gmail.com';
-const GMAIL_PASS = process.env.GMAIL_PASS; // كلمة مرور التطبيق
+const GMAIL_PASS = process.env.GMAIL_PASS; // dbex aoyh Irdo hhbn
 
 // ✅ إعداد Gmail SMTP
 const transporter = nodemailer.createTransport({
