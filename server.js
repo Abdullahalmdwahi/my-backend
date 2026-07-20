@@ -1,11 +1,11 @@
 // ============================================
-// 🚀 خادم تطبيق السوق - النسخة الكاملة مع الإيميلات (محسّن)
+// 🚀 خادم تطبيق السوق - مع Brevo API
 // ============================================
 
 const express = require('express');
 const cors = require('cors');
 const { createClient } = require('@supabase/supabase-js');
-const nodemailer = require('nodemailer');
+const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
@@ -19,39 +19,52 @@ const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ============================================
-// 📧 إعداد SMTP (Brevo) مع Timeout
-// ============================================
-const transporter = nodemailer.createTransport({
-  host: process.env.MAIL_HOST,
-  port: parseInt(process.env.MAIL_PORT || '587'),
-  secure: process.env.MAIL_ENCRYPTION === 'ssl',
-  auth: {
-    user: process.env.MAIL_USERNAME,
-    pass: process.env.MAIL_PASSWORD,
-  },
-  tls: {
-    rejectUnauthorized: false,
-  },
-  // ✅ إضافة Timeout
-  connectionTimeout: 10000,
-  greetingTimeout: 10000,
-  socketTimeout: 15000,
-});
-
-// ✅ التحقق من اتصال SMTP عند بدء التشغيل
-transporter.verify((error, success) => {
-  if (error) {
-    console.error('❌ فشل الاتصال بـ SMTP:', error.message);
-  } else {
-    console.log('✅ SMTP متصل بنجاح');
-  }
-});
-
-// ============================================
 // ⚙️ إعدادات الخادم
 // ============================================
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
+
+// ============================================
+// 📧 إعداد Brevo API
+// ============================================
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const BREVO_FROM_EMAIL = process.env.BREVO_FROM_EMAIL || 'iiuuyy2021@gmail.com';
+const BREVO_FROM_NAME = process.env.BREVO_FROM_NAME || 'Almedwahi';
+
+// ✅ دالة إرسال إيميل عبر Brevo API
+async function sendEmailViaBrevo(to, subject, htmlContent, textContent) {
+  try {
+    console.log(`📧 [Brevo API] بدء إرسال إلى: ${to}`);
+
+    const response = await axios.post(
+      'https://api.brevo.com/v3/smtp/email',
+      {
+        sender: {
+          name: BREVO_FROM_NAME,
+          email: BREVO_FROM_EMAIL,
+        },
+        to: [{ email: to }],
+        subject: subject,
+        htmlContent: htmlContent,
+        textContent: textContent || htmlContent.replace(/<[^>]*>/g, ''),
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'api-key': BREVO_API_KEY,
+        },
+        timeout: 15000,
+      }
+    );
+
+    console.log(`✅ [Brevo API] تم الإرسال بنجاح إلى: ${to}`);
+    console.log(`📧 Message ID: ${response.data.messageId}`);
+    return true;
+  } catch (error) {
+    console.error('❌ [Brevo API] فشل الإرسال:', error.response?.data || error.message);
+    return false;
+  }
+}
 
 // ============================================
 // 🏠 نقطة نهاية اختبار الاتصال
@@ -64,25 +77,42 @@ app.get('/', (req, res) => {
   });
 });
 
-// ✅ نقطة اختبار SMTP
+// ✅ نقطة اختبار Brevo API
 app.get('/api/email/test', async (req, res) => {
   try {
-    await transporter.verify();
-    res.json({
-      success: true,
-      message: '✅ إعدادات SMTP صحيحة',
-      config: {
-        host: process.env.MAIL_HOST,
-        port: process.env.MAIL_PORT,
-        from: process.env.MAIL_FROM_ADDRESS,
-        auth: !!process.env.MAIL_USERNAME && !!process.env.MAIL_PASSWORD,
-      }
-    });
+    if (!BREVO_API_KEY) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ BREVO_API_KEY غير موجود في المتغيرات البيئية',
+      });
+    }
+
+    const testResult = await sendEmailViaBrevo(
+      BREVO_FROM_EMAIL,
+      '🧪 اختبار Brevo API',
+      '<h1>✅ نجاح الاتصال!</h1><p>تم إرسال هذا الإيميل عبر Brevo API بنجاح.</p>'
+    );
+
+    if (testResult) {
+      res.json({
+        success: true,
+        message: '✅ Brevo API يعمل بشكل صحيح! تم إرسال إيميل اختبار.',
+        config: {
+          from: BREVO_FROM_EMAIL,
+          apiKey: BREVO_API_KEY ? 'موجود ✅' : 'غير موجود ❌',
+        }
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: '❌ فشل إرسال إيميل الاختبار، تحقق من API Key',
+      });
+    }
   } catch (error) {
-    console.error('❌ فشل اختبار SMTP:', error);
+    console.error('❌ فشل اختبار Brevo API:', error);
     res.status(500).json({
       success: false,
-      message: '❌ فشل الاتصال بخادم البريد',
+      message: '❌ فشل الاتصال بـ Brevo API',
       error: error.message,
     });
   }
@@ -1287,13 +1317,13 @@ app.put('/api/notifications/:id/read', async (req, res) => {
 });
 
 // ============================================
-// 📧 7. مجموعة الإيميلات (Email) - ✅ المحسّنة
+// 📧 7. مجموعة الإيميلات (Email) - مع Brevo API
 // ============================================
 
-// ✅ إرسال إيميل عام (محسّن)
+// ✅ إرسال إيميل عام
 app.post('/api/email/send', async (req, res) => {
   const startTime = Date.now();
-  console.log(`📧 [${new Date().toISOString()}] بدء إرسال إيميل`);
+  console.log(`📧 [${new Date().toISOString()}] بدء إرسال إيميل (API)`);
 
   try {
     const { to, subject, html, text } = req.body;
@@ -1308,72 +1338,38 @@ app.post('/api/email/send', async (req, res) => {
     console.log(`📧 إلى: ${to}`);
     console.log(`📧 الموضوع: ${subject}`);
 
-    const mailOptions = {
-      from: `"${process.env.MAIL_FROM_NAME || 'Sell In'}" <${process.env.MAIL_FROM_ADDRESS || 'no-reply@sellin.com'}>`,
-      to: to,
-      subject: subject,
-      text: text || html.replace(/<[^>]*>/g, ''),
-      html: html,
-    };
-
-    // ✅ استخدام Promise.race لإضافة Timeout
-    const sendMailPromise = transporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('TIMEOUT: انتهى وقت إرسال الإيميل')), 15000);
-    });
-
-    const info = await Promise.race([sendMailPromise, timeoutPromise]);
+    const result = await sendEmailViaBrevo(to, subject, html, text);
 
     const duration = Date.now() - startTime;
-    console.log(`✅ [${new Date().toISOString()}] تم إرسال الإيميل في ${duration}ms`);
-    console.log(`📧 Message ID: ${info.messageId}`);
 
-    res.json({
-      success: true,
-      message: '✅ تم إرسال الإيميل بنجاح',
-      messageId: info.messageId,
-      duration: duration,
-    });
-
+    if (result) {
+      console.log(`✅ [${new Date().toISOString()}] تم الإرسال في ${duration}ms`);
+      res.json({
+        success: true,
+        message: '✅ تم إرسال الإيميل بنجاح',
+        duration: duration,
+      });
+    } else {
+      console.error(`❌ [${new Date().toISOString()}] فشل الإرسال بعد ${duration}ms`);
+      res.status(500).json({
+        success: false,
+        message: '❌ فشل إرسال الإيميل، حاول مرة أخرى',
+        duration: duration,
+      });
+    }
   } catch (error) {
     const duration = Date.now() - startTime;
-    console.error(`❌ [${new Date().toISOString()}] فشل إرسال الإيميل بعد ${duration}ms:`, error.message);
-
-    // ✅ تحديد نوع الخطأ
-    let errorMessage = '❌ فشل إرسال الإيميل';
-    let statusCode = 500;
-
-    if (error.message.includes('TIMEOUT')) {
-      errorMessage = '⏰ انتهى وقت إرسال الإيميل، حاول مرة أخرى';
-      statusCode = 408;
-    } else if (error.message.includes('ECONNREFUSED')) {
-      errorMessage = '❌ لا يمكن الاتصال بخادم البريد';
-      statusCode = 503;
-    } else if (error.message.includes('Authentication')) {
-      errorMessage = '❌ فشل المصادقة مع خادم البريد، تأكد من بيانات الدخول';
-      statusCode = 401;
-    } else if (error.message.includes('Invalid login')) {
-      errorMessage = '❌ اسم المستخدم أو كلمة المرور غير صحيحة';
-      statusCode = 401;
-    } else if (error.message.includes('connect')) {
-      errorMessage = '❌ لا يمكن الاتصال بخادم البريد، تأكد من الاتصال بالإنترنت';
-      statusCode = 503;
-    }
-
-    res.status(statusCode).json({
+    console.error(`❌ [${new Date().toISOString()}] خطأ:`, error.message);
+    res.status(500).json({
       success: false,
-      message: errorMessage,
-      duration: duration,
-      ...(process.env.NODE_ENV === 'development' && { error: error.message }),
+      message: '❌ فشل إرسال الإيميل',
+      error: error.message,
     });
   }
 });
 
 // ✅ إرسال إيميل التفعيل
 app.post('/api/email/send-verification', async (req, res) => {
-  const startTime = Date.now();
-  console.log(`📧 [${new Date().toISOString()}] بدء إرسال إيميل التفعيل`);
-
   try {
     const { to, token } = req.body;
 
@@ -1387,43 +1383,30 @@ app.post('/api/email/send-verification', async (req, res) => {
     const subject = '✅ تفعيل حسابك في Sell In';
     const html = buildVerificationEmailHtml(token);
 
-    const mailOptions = {
-      from: `"${process.env.MAIL_FROM_NAME || 'Sell In'}" <${process.env.MAIL_FROM_ADDRESS || 'no-reply@sellin.com'}>`,
-      to: to,
-      subject: subject,
-      html: html,
-    };
+    const result = await sendEmailViaBrevo(to, subject, html);
 
-    const sendMailPromise = transporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('TIMEOUT')), 15000);
-    });
-
-    await Promise.race([sendMailPromise, timeoutPromise]);
-
-    const duration = Date.now() - startTime;
-    console.log(`✅ [${new Date().toISOString()}] تم إرسال إيميل التفعيل في ${duration}ms`);
-
-    res.json({
-      success: true,
-      message: '✅ تم إرسال إيميل التفعيل بنجاح',
-    });
-
+    if (result) {
+      res.json({
+        success: true,
+        message: '✅ تم إرسال إيميل التفعيل بنجاح',
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: '❌ فشل إرسال إيميل التفعيل',
+      });
+    }
   } catch (error) {
-    const duration = Date.now() - startTime;
-    console.error(`❌ [${new Date().toISOString()}] فشل إرسال إيميل التفعيل بعد ${duration}ms:`, error.message);
+    console.error('❌ فشل إرسال إيميل التفعيل:', error);
     res.status(500).json({
       success: false,
-      message: '❌ فشل إرسال إيميل التفعيل، حاول مرة أخرى',
+      message: '❌ فشل إرسال إيميل التفعيل',
     });
   }
 });
 
 // ✅ إرسال إيميل إعادة تعيين كلمة المرور
 app.post('/api/email/send-password-reset', async (req, res) => {
-  const startTime = Date.now();
-  console.log(`📧 [${new Date().toISOString()}] بدء إرسال إعادة تعيين كلمة المرور`);
-
   try {
     const { to, token } = req.body;
 
@@ -1434,49 +1417,35 @@ app.post('/api/email/send-password-reset', async (req, res) => {
       });
     }
 
-    console.log(`📧 إلى: ${to}`);
-    console.log(`📧 الرمز: ${token}`);
+    console.log(`📧 إرسال إعادة تعيين كلمة المرور إلى: ${to}`);
 
     const subject = '🔐 إعادة تعيين كلمة المرور - Sell In';
     const html = buildPasswordResetEmailHtml(token);
 
-    const mailOptions = {
-      from: `"${process.env.MAIL_FROM_NAME || 'Sell In'}" <${process.env.MAIL_FROM_ADDRESS || 'no-reply@sellin.com'}>`,
-      to: to,
-      subject: subject,
-      html: html,
-    };
+    const result = await sendEmailViaBrevo(to, subject, html);
 
-    const sendMailPromise = transporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('TIMEOUT')), 15000);
-    });
-
-    await Promise.race([sendMailPromise, timeoutPromise]);
-
-    const duration = Date.now() - startTime;
-    console.log(`✅ [${new Date().toISOString()}] تم إرسال إعادة تعيين كلمة المرور في ${duration}ms`);
-
-    res.json({
-      success: true,
-      message: '✅ تم إرسال إيميل إعادة تعيين كلمة المرور بنجاح',
-    });
-
+    if (result) {
+      res.json({
+        success: true,
+        message: '✅ تم إرسال إيميل إعادة تعيين كلمة المرور بنجاح',
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: '❌ فشل إرسال الإيميل، حاول مرة أخرى',
+      });
+    }
   } catch (error) {
-    const duration = Date.now() - startTime;
-    console.error(`❌ [${new Date().toISOString()}] فشل إرسال إعادة تعيين كلمة المرور بعد ${duration}ms:`, error.message);
+    console.error('❌ فشل إرسال إعادة تعيين كلمة المرور:', error);
     res.status(500).json({
       success: false,
-      message: '❌ فشل إرسال الإيميل، حاول مرة أخرى',
+      message: '❌ فشل إرسال الإيميل',
     });
   }
 });
 
 // ✅ إرسال إيميل التحقق من الجهاز
 app.post('/api/email/send-device-verification', async (req, res) => {
-  const startTime = Date.now();
-  console.log(`📧 [${new Date().toISOString()}] بدء إرسال رمز التحقق`);
-
   try {
     const { to, token } = req.body;
 
@@ -1490,34 +1459,24 @@ app.post('/api/email/send-device-verification', async (req, res) => {
     const subject = '🔐 رمز التحقق لتسجيل الدخول - Sell In';
     const html = buildDeviceVerificationEmailHtml(token);
 
-    const mailOptions = {
-      from: `"${process.env.MAIL_FROM_NAME || 'Sell In'}" <${process.env.MAIL_FROM_ADDRESS || 'no-reply@sellin.com'}>`,
-      to: to,
-      subject: subject,
-      html: html,
-    };
+    const result = await sendEmailViaBrevo(to, subject, html);
 
-    const sendMailPromise = transporter.sendMail(mailOptions);
-    const timeoutPromise = new Promise((_, reject) => {
-      setTimeout(() => reject(new Error('TIMEOUT')), 15000);
-    });
-
-    await Promise.race([sendMailPromise, timeoutPromise]);
-
-    const duration = Date.now() - startTime;
-    console.log(`✅ [${new Date().toISOString()}] تم إرسال رمز التحقق في ${duration}ms`);
-
-    res.json({
-      success: true,
-      message: '✅ تم إرسال رمز التحقق بنجاح',
-    });
-
+    if (result) {
+      res.json({
+        success: true,
+        message: '✅ تم إرسال رمز التحقق بنجاح',
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: '❌ فشل إرسال رمز التحقق',
+      });
+    }
   } catch (error) {
-    const duration = Date.now() - startTime;
-    console.error(`❌ [${new Date().toISOString()}] فشل إرسال رمز التحقق بعد ${duration}ms:`, error.message);
+    console.error('❌ فشل إرسال رمز التحقق:', error);
     res.status(500).json({
       success: false,
-      message: '❌ فشل إرسال رمز التحقق، حاول مرة أخرى',
+      message: '❌ فشل إرسال رمز التحقق',
     });
   }
 });
@@ -1807,7 +1766,6 @@ app.get('/api/admin/transactions', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`✅ الخادم يعمل على المنفذ ${PORT}`);
   console.log(`🌐 http://localhost:${PORT}`);
-  console.log(`📧 SMTP: ${process.env.MAIL_HOST}`);
-  console.log(`📧 من: ${process.env.MAIL_FROM_ADDRESS}`);
-  console.log(`📧 المستخدم: ${process.env.MAIL_USERNAME}`);
+  console.log(`📧 Brevo API: ${BREVO_API_KEY ? '✅ تم الإعداد' : '❌ مفقود'}`);
+  console.log(`📧 من: ${BREVO_FROM_EMAIL}`);
 });
