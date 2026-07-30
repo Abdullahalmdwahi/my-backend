@@ -21,17 +21,14 @@ async function fetchData(table, filters = {}, options = {}) {
   try {
     let query = supabase.from(table).select(options.select || '*');
     
-    // إضافة الفلاتر
     for (const [key, value] of Object.entries(filters)) {
       query = query.eq(key, value);
     }
     
-    // إضافة الترتيب
     if (options.orderBy) {
       query = query.order(options.orderBy, { ascending: options.ascending || false });
     }
     
-    // إضافة التحديد
     if (options.limit) {
       query = query.limit(options.limit);
     }
@@ -104,17 +101,14 @@ async function getAuctionsWithDetails(filters = {}, options = {}) {
         bids:bids(*)
       `);
     
-    // إضافة الفلاتر
     for (const [key, value] of Object.entries(filters)) {
       query = query.eq(key, value);
     }
     
-    // إضافة الترتيب
     if (options.orderBy) {
       query = query.order(options.orderBy, { ascending: options.ascending || false });
     }
     
-    // إضافة التحديد
     if (options.limit) {
       query = query.limit(options.limit);
     }

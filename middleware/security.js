@@ -27,7 +27,6 @@ function sanitizeBody(req, res, next) {
         );
       }
       if (typeof req.body[key] === 'object' && req.body[key] !== null) {
-        // ✅ تنظيف الكائنات المتداخلة
         for (let subKey in req.body[key]) {
           if (typeof req.body[key][subKey] === 'string') {
             req.body[key][subKey] = sanitizeInput(req.body[key][subKey]);
