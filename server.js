@@ -981,7 +981,7 @@ app.get('/api/payments/transactions/:userId', authenticate, async (req, res) => 
 });
 
 // ============================================
-// 🏦 3. مجموعة المحافظ (Wallets)
+// 🏦 3. مجموعة المحافظ (Wallets) - متوافقة مع هيكل قاعدة البيانات
 // ============================================
 
 // ✅ جلب المحافظ المتاحة (عام - بدون مصادقة)
@@ -1011,9 +1011,28 @@ app.get('/api/wallets/available', async (req, res) => {
       });
     }
     
+    // ✅ تحويل البيانات إلى الشكل المطلوب مع الحفاظ على جميع الأعمدة
+    const formattedWallets = wallets.map(wallet => ({
+      id: wallet.id,
+      wallet_number: wallet.wallet_number,
+      wallet_name: wallet.wallet_name,
+      account_name: wallet.account_name,
+      branch: wallet.branch,
+      is_active: wallet.is_active,
+      is_default: wallet.is_default,
+      metadata: wallet.metadata,
+      created_at: wallet.created_at,
+      updated_at: wallet.updated_at,
+      wallet_type_id: wallet.wallet_type_id,
+      wallet_type: wallet.wallet_types,
+      // ✅ دعم للاسم المحلي والعربي
+      name: wallet.wallet_name || wallet.wallet_number || 'محفظة',
+      name_ar: wallet.wallet_name || wallet.wallet_number || 'محفظة'
+    }));
+    
     res.json({
       success: true,
-      wallets: wallets || []
+      wallets: formattedWallets || []
     });
     
   } catch (error) {
