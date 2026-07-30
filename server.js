@@ -31,6 +31,9 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // ⚙️ إعدادات الخادم - الأمان
 // ============================================
 
+// ✅ إضافة trust proxy (هام لـ Render)
+app.set('trust proxy', true);
+
 // 1️⃣ إخفاء معلومات الخادم
 app.disable('x-powered-by');
 
@@ -455,7 +458,7 @@ app.post('/api/auth/register', async (req, res) => {
       }
       return res.status(400).json({ 
         success: false, 
-        message: `❌ فشل التسجيل` 
+        message: '❌ فشل التسجيل' 
       });
     }
     
@@ -670,11 +673,11 @@ app.get('/api/auth/verify-token', authenticate, (req, res) => {
 });
 
 // ============================================
-// 💰 2. مجموعة المدفوعات (Payments) - محمية
+// 💰 2. مجموعة المدفوعات (Payments)
 // ============================================
 
-// ✅ جلب الباقات المتاحة (محمي)
-app.get('/api/payments/subscriptions', authenticate, async (req, res) => {
+// ✅ جلب الباقات المتاحة (عام - بدون مصادقة)
+app.get('/api/payments/subscriptions', async (req, res) => {
   try {
     const { data: subscriptions, error } = await supabase
       .from('subscriptions')
@@ -683,6 +686,7 @@ app.get('/api/payments/subscriptions', authenticate, async (req, res) => {
       .order('duration_days', { ascending: true });
     
     if (error) {
+      console.error('❌ فشل جلب الباقات:', error);
       return res.status(500).json({ 
         success: false, 
         message: '❌ فشل جلب الباقات' 
@@ -703,8 +707,8 @@ app.get('/api/payments/subscriptions', authenticate, async (req, res) => {
   }
 });
 
-// ✅ جلب طرق الدفع حسب الدولة (محمي)
-app.get('/api/payments/payment-methods', authenticate, async (req, res) => {
+// ✅ جلب طرق الدفع حسب الدولة (عام - بدون مصادقة)
+app.get('/api/payments/payment-methods', async (req, res) => {
   try {
     const { country_code } = req.query;
     
@@ -721,6 +725,7 @@ app.get('/api/payments/payment-methods', authenticate, async (req, res) => {
     const { data: paymentMethods, error } = await query;
     
     if (error) {
+      console.error('❌ فشل جلب طرق الدفع:', error);
       return res.status(500).json({ 
         success: false, 
         message: '❌ فشل جلب طرق الدفع' 
@@ -741,7 +746,7 @@ app.get('/api/payments/payment-methods', authenticate, async (req, res) => {
   }
 });
 
-// ✅ التحقق من صحة كود المحفظة (محمي)
+// ✅ التحقق من صحة كود المحفظة (محمي - يحتاج مصادقة)
 app.post('/api/payments/verify-wallet-code', authenticate, async (req, res) => {
   try {
     const { code, walletId, amount } = req.body;
@@ -801,7 +806,7 @@ app.post('/api/payments/verify-wallet-code', authenticate, async (req, res) => {
   }
 });
 
-// ✅ تفعيل الاشتراك (محمي)
+// ✅ تفعيل الاشتراك (محمي - يحتاج مصادقة)
 app.post('/api/payments/activate-subscription', authenticate, async (req, res) => {
   try {
     const { userId, subscriptionId, code, walletId, amount } = req.body;
@@ -936,7 +941,7 @@ app.post('/api/payments/activate-subscription', authenticate, async (req, res) =
   }
 });
 
-// ✅ جلب معاملات المستخدم (محمي)
+// ✅ جلب معاملات المستخدم (محمي - يحتاج مصادقة)
 app.get('/api/payments/transactions/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -976,11 +981,11 @@ app.get('/api/payments/transactions/:userId', authenticate, async (req, res) => 
 });
 
 // ============================================
-// 🏦 3. مجموعة المحافظ (Wallets) - محمية
+// 🏦 3. مجموعة المحافظ (Wallets)
 // ============================================
 
-// ✅ جلب المحافظ المتاحة (محمي)
-app.get('/api/wallets/available', authenticate, async (req, res) => {
+// ✅ جلب المحافظ المتاحة (عام - بدون مصادقة)
+app.get('/api/wallets/available', async (req, res) => {
   try {
     const { data: wallets, error } = await supabase
       .from('wallets')
@@ -999,6 +1004,7 @@ app.get('/api/wallets/available', authenticate, async (req, res) => {
       .eq('is_active', true);
     
     if (error) {
+      console.error('❌ فشل جلب المحافظ:', error);
       return res.status(500).json({ 
         success: false, 
         message: '❌ فشل جلب المحافظ' 
@@ -1019,7 +1025,7 @@ app.get('/api/wallets/available', authenticate, async (req, res) => {
   }
 });
 
-// ✅ جلب رصيد المستخدم في محفظة (محمي)
+// ✅ جلب رصيد المستخدم في محفظة (محمي - يحتاج مصادقة)
 app.get('/api/wallets/balance/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1060,7 +1066,7 @@ app.get('/api/wallets/balance/:userId', authenticate, async (req, res) => {
   }
 });
 
-// ✅ خصم رصيد من المحفظة (محمي)
+// ✅ خصم رصيد من المحفظة (محمي - يحتاج مصادقة)
 app.post('/api/wallets/deduct-balance', authenticate, async (req, res) => {
   try {
     const { userId, walletId, amount, transactionType, referenceId, description } = req.body;
@@ -1150,7 +1156,7 @@ app.post('/api/wallets/deduct-balance', authenticate, async (req, res) => {
   }
 });
 
-// ✅ إنشاء كود شراء (محمي)
+// ✅ إنشاء كود شراء (محمي - يحتاج مصادقة)
 app.post('/api/wallets/create-purchase-code', authenticate, async (req, res) => {
   try {
     const { userId, amount, walletId, expiryMinutes } = req.body;
@@ -1211,7 +1217,7 @@ app.post('/api/wallets/create-purchase-code', authenticate, async (req, res) => 
   }
 });
 
-// ✅ صرف كود الشراء (محمي)
+// ✅ صرف كود الشراء (محمي - يحتاج مصادقة)
 app.post('/api/wallets/redeem-code', authenticate, async (req, res) => {
   try {
     const { code, userId } = req.body;
@@ -1328,7 +1334,7 @@ app.post('/api/wallets/redeem-code', authenticate, async (req, res) => {
   }
 });
 
-// ✅ جلب أكواد المستخدم (محمي)
+// ✅ جلب أكواد المستخدم (محمي - يحتاج مصادقة)
 app.get('/api/wallets/user-codes/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -2064,7 +2070,7 @@ app.post('/api/email/send-device-verification', authenticate, async (req, res) =
 // 🏆 8. مجموعة المزادات (Auctions)
 // ============================================
 
-// ✅ جلب جميع المزادات (مع فلترة)
+// ✅ جلب جميع المزادات (عام)
 app.get('/api/auctions', async (req, res) => {
   try {
     const { status, category, seller, limit = 50, offset = 0 } = req.query;
@@ -2091,6 +2097,7 @@ app.get('/api/auctions', async (req, res) => {
     const { data: auctions, error } = await query;
     
     if (error) {
+      console.error('❌ فشل جلب المزادات:', error);
       return res.status(500).json({ 
         success: false, 
         message: '❌ فشل جلب المزادات' 
@@ -2112,7 +2119,7 @@ app.get('/api/auctions', async (req, res) => {
   }
 });
 
-// ✅ جلب تفاصيل مزاد
+// ✅ جلب تفاصيل مزاد (عام)
 app.get('/api/auctions/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -2428,7 +2435,7 @@ app.put('/api/auctions/:id/cancel', authenticate, async (req, res) => {
   }
 });
 
-// ✅ جلب عروض المزاد
+// ✅ جلب عروض المزاد (عام)
 app.get('/api/auctions/:id/bids', async (req, res) => {
   try {
     const { id } = req.params;
@@ -2464,7 +2471,7 @@ app.get('/api/auctions/:id/bids', async (req, res) => {
 // 🎫 9. مجموعة اشتراكات المزادات (Auction Subscriptions)
 // ============================================
 
-// ✅ جلب باقات اشتراكات المزادات
+// ✅ جلب باقات اشتراكات المزادات (عام)
 app.get('/api/auction-subscriptions', async (req, res) => {
   try {
     const { data: subscriptions, error } = await supabase
