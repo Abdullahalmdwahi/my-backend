@@ -1025,7 +1025,6 @@ app.get('/api/wallets/available', async (req, res) => {
       updated_at: wallet.updated_at,
       wallet_type_id: wallet.wallet_type_id,
       wallet_type: wallet.wallet_types,
-      // ✅ دعم للاسم المحلي والعربي
       name: wallet.wallet_name || wallet.wallet_number || 'محفظة',
       name_ar: wallet.wallet_name || wallet.wallet_number || 'محفظة'
     }));
@@ -2086,7 +2085,7 @@ app.post('/api/email/send-device-verification', authenticate, async (req, res) =
 });
 
 // ============================================
-// 🏆 8. مجموعة المزادات (Auctions)
+// 🏆 8. مجموعة المزادات (Auctions) - NEW
 // ============================================
 
 // ✅ جلب جميع المزادات (عام)
@@ -2107,6 +2106,10 @@ app.get('/api/auctions', async (req, res) => {
     
     if (status) {
       query = query.eq('status', status);
+    }
+    
+    if (category) {
+      query = query.eq('category_id', category);
     }
     
     if (seller) {
@@ -2131,6 +2134,50 @@ app.get('/api/auctions', async (req, res) => {
     
   } catch (error) {
     console.error('❌ خطأ في جلب المزادات:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ جلب المزادات النشطة (عام)
+app.get('/api/auctions/active', async (req, res) => {
+  try {
+    const { category, limit = 50, offset = 0 } = req.query;
+    
+    let query = supabase
+      .from('auctions')
+      .select(`
+        *,
+        product:products(*),
+        seller:users!fk_auctions_seller(id, name, business_name, phone),
+        bids:bids(*)
+      `)
+      .eq('status', 'active')
+      .order('end_time', { ascending: true })
+      .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+    
+    if (category) {
+      query = query.eq('category_id', category);
+    }
+    
+    const { data: auctions, error } = await query;
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب المزادات النشطة' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      auctions: auctions || []
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب المزادات النشطة:', error);
     res.status(500).json({ 
       success: false, 
       message: '❌ حدث خطأ في الخادم' 
@@ -2180,15 +2227,81 @@ app.get('/api/auctions/:id', async (req, res) => {
   }
 });
 
+// ✅ جلب صور المزاد (عام)
+app.get('/api/auctions/:id/images', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const { data: images, error } = await supabase
+      .from('auction_images')
+      .select('*')
+      .eq('auction_id', id)
+      .order('sort_order', { ascending: true });
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب صور المزاد' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      images: images || []
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب صور المزاد:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ جلب تاريخ المزاد (عام)
+app.get('/api/auctions/:id/history', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const { data: history, error } = await supabase
+      .from('auction_history')
+      .select('*')
+      .eq('auction_id', id)
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب تاريخ المزاد' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      history: history || []
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب تاريخ المزاد:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
 // ✅ إنشاء مزاد جديد (محمي)
 app.post('/api/auctions', authenticate, async (req, res) => {
   try {
     const { 
       product_id, seller_id, starting_price, min_bid_increment, 
-      end_time, reserve_price, is_wholesale, min_quantity 
+      end_time, reserve_price, is_wholesale, min_quantity,
+      title, description, images, category_id, currency,
+      is_public, allow_auto_bid, max_auto_bid_amount, is_private, invited_users
     } = req.body;
     
-    if (!product_id || !seller_id || !starting_price || !min_bid_increment || !end_time) {
+    if (!seller_id || !starting_price || !min_bid_increment || !end_time) {
       return res.status(400).json({ 
         success: false, 
         message: '❌ البيانات المطلوبة غير مكتملة' 
@@ -2202,10 +2315,11 @@ app.post('/api/auctions', authenticate, async (req, res) => {
       });
     }
     
+    // ✅ إنشاء المزاد
     const { data: auction, error } = await supabase
       .from('auctions')
       .insert({
-        product_id: product_id,
+        product_id: product_id || null,
         seller_id: seller_id,
         starting_price: starting_price,
         current_price: starting_price,
@@ -2215,6 +2329,16 @@ app.post('/api/auctions', authenticate, async (req, res) => {
         is_wholesale: is_wholesale || false,
         min_quantity: min_quantity || 1,
         status: 'active',
+        title: sanitizeInput(title || ''),
+        description: sanitizeInput(description || ''),
+        images: images || [],
+        category_id: category_id || null,
+        currency: currency || 'YER',
+        is_public: is_public !== undefined ? is_public : true,
+        allow_auto_bid: allow_auto_bid || false,
+        max_auto_bid_amount: max_auto_bid_amount || null,
+        is_private: is_private || false,
+        invited_users: invited_users || [],
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
@@ -2222,16 +2346,33 @@ app.post('/api/auctions', authenticate, async (req, res) => {
       .single();
     
     if (error) {
+      console.error('❌ فشل إنشاء المزاد:', error);
       return res.status(500).json({ 
         success: false, 
         message: '❌ فشل إنشاء المزاد' 
       });
     }
     
-    await supabase
-      .from('products')
-      .update({ is_auction: true, auction_id: auction.id })
-      .eq('id', product_id);
+    // ✅ حفظ صور المزاد
+    if (images && images.length > 0) {
+      const imageInserts = images.map((url, index) => ({
+        auction_id: auction.id,
+        image_url: url,
+        is_main: index === 0,
+        sort_order: index,
+        created_at: new Date().toISOString()
+      }));
+      
+      await supabase.from('auction_images').insert(imageInserts);
+    }
+    
+    // ✅ تحديث المنتج إذا كان موجوداً
+    if (product_id) {
+      await supabase
+        .from('products')
+        .update({ is_auction: true, auction_id: auction.id })
+        .eq('id', product_id);
+    }
     
     res.json({
       success: true,
@@ -2252,7 +2393,7 @@ app.post('/api/auctions', authenticate, async (req, res) => {
 app.post('/api/auctions/:id/bid', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
-    const { amount, quantity } = req.body;
+    const { amount, quantity, is_auto_bid, max_auto_bid_amount, is_anonymous, note } = req.body;
     
     if (!amount) {
       return res.status(400).json({ 
@@ -2304,6 +2445,10 @@ app.post('/api/auctions/:id/bid', authenticate, async (req, res) => {
         user_name: req.user.business_name || req.user.name,
         amount: amount,
         quantity: quantity || 1,
+        is_auto_bid: is_auto_bid || false,
+        max_auto_bid_amount: max_auto_bid_amount || null,
+        is_anonymous: is_anonymous || false,
+        note: sanitizeInput(note || ''),
         created_at: new Date().toISOString()
       })
       .select()
@@ -2325,6 +2470,18 @@ app.post('/api/auctions/:id/bid', authenticate, async (req, res) => {
       })
       .eq('id', id);
     
+    // ✅ تسجيل في سجل المزاد
+    await supabase
+      .from('auction_history')
+      .insert({
+        auction_id: id,
+        action_type: 'bid',
+        user_id: req.user.id,
+        amount: amount,
+        new_value: { bid_id: bid.id },
+        created_at: new Date().toISOString()
+      });
+    
     res.json({
       success: true,
       message: '✅ تم تقديم العرض بنجاح',
@@ -2333,6 +2490,38 @@ app.post('/api/auctions/:id/bid', authenticate, async (req, res) => {
     
   } catch (error) {
     console.error('❌ خطأ في تقديم العرض:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ جلب عروض المزاد (عام)
+app.get('/api/auctions/:id/bids', async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const { data: bids, error } = await supabase
+      .from('bids')
+      .select('*')
+      .eq('auction_id', id)
+      .order('amount', { ascending: false });
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب العروض' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      bids: bids || []
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب العروض:', error);
     res.status(500).json({ 
       success: false, 
       message: '❌ حدث خطأ في الخادم' 
@@ -2382,10 +2571,24 @@ app.put('/api/auctions/:id/end', authenticate, async (req, res) => {
       })
       .eq('id', id);
     
+    if (auction.product_id) {
+      await supabase
+        .from('products')
+        .update({ is_auction: false })
+        .eq('auction_id', id);
+    }
+    
+    // ✅ تسجيل في سجل المزاد
     await supabase
-      .from('products')
-      .update({ is_auction: false })
-      .eq('auction_id', id);
+      .from('auction_history')
+      .insert({
+        auction_id: id,
+        action_type: 'end',
+        user_id: req.user.id,
+        old_value: { status: auction.status },
+        new_value: { status: 'ended', winner_id: highestBid?.user_id },
+        created_at: new Date().toISOString()
+      });
     
     res.json({
       success: true,
@@ -2435,10 +2638,24 @@ app.put('/api/auctions/:id/cancel', authenticate, async (req, res) => {
       })
       .eq('id', id);
     
+    if (auction.product_id) {
+      await supabase
+        .from('products')
+        .update({ is_auction: false })
+        .eq('auction_id', id);
+    }
+    
+    // ✅ تسجيل في سجل المزاد
     await supabase
-      .from('products')
-      .update({ is_auction: false })
-      .eq('auction_id', id);
+      .from('auction_history')
+      .insert({
+        auction_id: id,
+        action_type: 'cancel',
+        user_id: req.user.id,
+        old_value: { status: auction.status },
+        new_value: { status: 'cancelled' },
+        created_at: new Date().toISOString()
+      });
     
     res.json({
       success: true,
@@ -2454,31 +2671,22 @@ app.put('/api/auctions/:id/cancel', authenticate, async (req, res) => {
   }
 });
 
-// ✅ جلب عروض المزاد (عام)
-app.get('/api/auctions/:id/bids', async (req, res) => {
+// ✅ زيادة مشاهدات المزاد (عام)
+app.post('/api/auctions/:id/view', async (req, res) => {
   try {
     const { id } = req.params;
     
-    const { data: bids, error } = await supabase
-      .from('bids')
-      .select('*')
-      .eq('auction_id', id)
-      .order('amount', { ascending: false });
-    
-    if (error) {
-      return res.status(500).json({ 
-        success: false, 
-        message: '❌ فشل جلب العروض' 
-      });
-    }
+    await supabase.rpc('increment_auction_views', {
+      p_auction_id: id
+    });
     
     res.json({
       success: true,
-      bids: bids || []
+      message: '✅ تم تسجيل المشاهدة'
     });
     
   } catch (error) {
-    console.error('❌ خطأ في جلب العروض:', error);
+    console.error('❌ خطأ في زيادة المشاهدات:', error);
     res.status(500).json({ 
       success: false, 
       message: '❌ حدث خطأ في الخادم' 
@@ -2639,6 +2847,59 @@ app.get('/api/auction-subscriptions/my', authenticate, async (req, res) => {
     
   } catch (error) {
     console.error('❌ خطأ في جلب اشتراك المزادات:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ تحديث استخدام المزادات (خصم مزاد) (محمي)
+app.put('/api/auction-subscriptions/use', authenticate, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    
+    const { data: subscription, error } = await supabase
+      .from('user_auction_subscriptions')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('is_active', true)
+      .gt('end_date', new Date().toISOString())
+      .maybeSingle();
+    
+    if (error || !subscription) {
+      return res.status(404).json({ 
+        success: false, 
+        message: '❌ لا يوجد اشتراك مزادات نشط' 
+      });
+    }
+    
+    const usedAuctions = (subscription.used_auctions || 0) + 1;
+    const maxAuctions = subscription.max_auctions || 0;
+    
+    if (usedAuctions > maxAuctions) {
+      return res.status(400).json({ 
+        success: false, 
+        message: '❌ لقد استنفذت جميع المزادات المتاحة' 
+      });
+    }
+    
+    await supabase
+      .from('user_auction_subscriptions')
+      .update({
+        used_auctions: usedAuctions,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', subscription.id);
+    
+    res.json({
+      success: true,
+      message: '✅ تم خصم مزاد بنجاح',
+      remaining: maxAuctions - usedAuctions
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في خصم المزاد:', error);
     res.status(500).json({ 
       success: false, 
       message: '❌ حدث خطأ في الخادم' 
@@ -2811,7 +3072,10 @@ app.get('/api/admin/auctions', authenticate, isAdmin, async (req, res) => {
   }
 });
 
-// ✅ معالجة الأخطاء بشكل آمن
+// ============================================
+// 🛡️ معالجة الأخطاء بشكل آمن
+// ============================================
+
 app.use((err, req, res, next) => {
   const isProduction = process.env.NODE_ENV === 'production';
   

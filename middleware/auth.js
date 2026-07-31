@@ -11,7 +11,7 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key-change-this-in-production';
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '7d';
-const JWT_REFRESH_THRESHOLD = 24 * 60 * 60; // 24 ساعة
+const JWT_REFRESH_THRESHOLD = 24 * 60 * 60;
 
 // ✅ توليد JWT Token
 function generateToken(userId, email, role = 'user') {
