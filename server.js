@@ -1,5 +1,6 @@
+// server.js
 // ============================================
-// 🚀 خادم تطبيق السوق - نسخة آمنة مع JWT وتجديد تلقائي
+// 🚀 خادم تطبيق السوق - نسخة كاملة مع رفع الصور والمزادات والأمان المتكامل
 // ============================================
 
 const express = require('express');
@@ -8,6 +9,8 @@ const helmet = require('helmet');
 const compression = require('compression');
 const { createClient } = require('@supabase/supabase-js');
 const axios = require('axios');
+const multer = require('multer');
+const path = require('path');
 require('dotenv').config();
 
 // ============================================
@@ -28,16 +31,14 @@ const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 // ============================================
-// ⚙️ إعدادات الخادم - الأمان
+// ⚙️ إعدادات الخادم
 // ============================================
-
-// ✅ إضافة trust proxy (هام لـ Render)
 app.set('trust proxy', true);
-
-// 1️⃣ إخفاء معلومات الخادم
 app.disable('x-powered-by');
 
-// 2️⃣ Helmet - حماية الرؤوس
+// ============================================
+// 🛡️ الأمان
+// ============================================
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -60,16 +61,12 @@ app.use(helmet({
   xssFilter: true,
 }));
 
-// 3️⃣ Compression - ضغط الاستجابات
 app.use(compression());
-
-// 4️⃣ Rate Limiting - حماية DDoS
 app.use('/api/', limiter);
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', registerLimiter);
 app.use('/api/auth/reset-password', passwordResetLimiter);
 
-// 5️⃣ CORS - تحديد النطاقات المسموحة
 const corsOptions = {
   origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000', 'http://localhost:8080'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -80,24 +77,12 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
-// 6️⃣ JSON parsing مع حد حجم
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// 7️⃣ تنظيف الإدخالات (XSS Protection)
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 app.use(sanitizeBody);
-
-// 8️⃣ Security Headers إضافية
 app.use(securityHeaders);
 
-// 9️⃣ إزالة رؤوس الخادم الإضافية
-app.use((req, res, next) => {
-  res.removeHeader('X-Powered-By');
-  res.removeHeader('Server');
-  next();
-});
-
-// 🔟 إضافة التوكن الجديد إلى الاستجابة (تجديد تلقائي)
+// ✅ إضافة التوكن الجديد إلى الاستجابة (تجديد تلقائي)
 app.use((req, res, next) => {
   const originalJson = res.json;
   
@@ -115,22 +100,37 @@ app.use((req, res, next) => {
 });
 
 // ============================================
-// 📧 إعداد Brevo API (HTTP)
+// 📤 إعداد Multer لرفع الصور
+// ============================================
+const storage = multer.memoryStorage();
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (allowedTypes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('❌ نوع الملف غير مدعوم'), false);
+    }
+  },
+});
+
+// ============================================
+// 📧 إعداد Brevo API
 // ============================================
 const BREVO_API_KEY = process.env.BREVO_API_KEY;
 const BREVO_FROM_EMAIL = process.env.BREVO_FROM_EMAIL || 'iiuuyy2021@gmail.com';
 const BREVO_FROM_NAME = process.env.BREVO_FROM_NAME || 'Sell In';
 
-// ✅ دالة إرسال إيميل عبر Brevo API
 async function sendEmailViaBrevo(to, subject, htmlContent, textContent) {
   try {
     console.log(`📧 [Brevo API] بدء إرسال إلى: ${to}`);
 
     const data = {
-      sender: {
-        name: BREVO_FROM_NAME,
-        email: BREVO_FROM_EMAIL,
-      },
+      sender: { name: BREVO_FROM_NAME, email: BREVO_FROM_EMAIL },
       to: [{ email: to }],
       subject: subject,
       htmlContent: htmlContent,
@@ -316,16 +316,13 @@ function buildDeviceVerificationEmailHtml(token) {
 }
 
 // ============================================
-// 🏠 نقطة نهاية اختبار الاتصال (عام - آمن)
+// 🏠 نقطة نهاية اختبار الاتصال
 // ============================================
 app.get('/', (req, res) => {
-  res.json({
-    success: true,
-    message: '🚀 API is running'
-  });
+  res.json({ success: true, message: '🚀 API is running' });
 });
 
-// ✅ نقطة اختبار Brevo API (عام)
+// ✅ نقطة اختبار Brevo API
 app.get('/api/email/test', async (req, res) => {
   try {
     if (!BREVO_API_KEY) {
@@ -378,7 +375,302 @@ app.get('/api/admin/test', authenticate, isAdmin, (req, res) => {
 });
 
 // ============================================
-// 🔐 1. مجموعة المصادقة (Auth)
+// 📤 1. نقاط نهاية رفع الصور
+// ============================================
+
+// ✅ رفع صورة واحدة لمنتج
+app.post('/api/products/:id/upload-image', authenticate, upload.single('image'), async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const file = req.file;
+    
+    if (!file) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ لم يتم إرسال صورة'
+      });
+    }
+
+    const fileName = `product_${productId}_${Date.now()}_${file.originalname}`;
+    const filePath = `products/${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from('product_images')
+      .upload(filePath, file.buffer, {
+        contentType: file.mimetype,
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (error) {
+      console.error('❌ فشل رفع الصورة:', error);
+      return res.status(500).json({
+        success: false,
+        message: '❌ فشل رفع الصورة',
+        error: error.message
+      });
+    }
+
+    const publicUrl = supabase.storage
+      .from('product_images')
+      .getPublicUrl(filePath);
+
+    await supabase
+      .from('product_images')
+      .insert({
+        product_id: productId,
+        image_url: publicUrl,
+        is_main: false,
+        created_at: new Date().toISOString()
+      });
+
+    res.json({
+      success: true,
+      message: '✅ تم رفع الصورة بنجاح',
+      url: publicUrl,
+      path: filePath
+    });
+
+  } catch (error) {
+    console.error('❌ خطأ في رفع الصورة:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في رفع الصورة'
+    });
+  }
+});
+
+// ✅ رفع صور متعددة لمنتج
+app.post('/api/products/:id/upload-images', authenticate, upload.array('images', 10), async (req, res) => {
+  try {
+    const productId = req.params.id;
+    const files = req.files;
+    
+    if (!files || files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ لم يتم إرسال صور'
+      });
+    }
+
+    const uploadedUrls = [];
+    const errors = [];
+
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const file = files[i];
+        const fileName = `product_${productId}_${Date.now()}_${i}_${file.originalname}`;
+        const filePath = `products/${fileName}`;
+
+        const { error } = await supabase.storage
+          .from('product_images')
+          .upload(filePath, file.buffer, {
+            contentType: file.mimetype,
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (error) {
+          errors.push({ index: i, error: error.message });
+          continue;
+        }
+
+        const publicUrl = supabase.storage
+          .from('product_images')
+          .getPublicUrl(filePath);
+        uploadedUrls.push(publicUrl);
+
+        await supabase
+          .from('product_images')
+          .insert({
+            product_id: productId,
+            image_url: publicUrl,
+            is_main: i === 0,
+            sort_order: i,
+            created_at: new Date().toISOString()
+          });
+
+      } catch (err) {
+        errors.push({ index: i, error: err.message });
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `✅ تم رفع ${uploadedUrls.length}/${files.length} صور`,
+      urls: uploadedUrls,
+      errors: errors.length > 0 ? errors : undefined
+    });
+
+  } catch (error) {
+    console.error('❌ خطأ في رفع الصور:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في رفع الصور'
+    });
+  }
+});
+
+// ✅ رفع صورة لمزاد
+app.post('/api/auctions/:id/upload-image', authenticate, upload.single('image'), async (req, res) => {
+  try {
+    const auctionId = req.params.id;
+    const file = req.file;
+    
+    if (!file) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ لم يتم إرسال صورة'
+      });
+    }
+
+    const fileName = `auction_${auctionId}_${Date.now()}_${file.originalname}`;
+    const filePath = `auctions/${fileName}`;
+
+    const { data, error } = await supabase.storage
+      .from('auction_images')
+      .upload(filePath, file.buffer, {
+        contentType: file.mimetype,
+        cacheControl: '3600',
+        upsert: false
+      });
+
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        message: '❌ فشل رفع الصورة',
+        error: error.message
+      });
+    }
+
+    const publicUrl = supabase.storage
+      .from('auction_images')
+      .getPublicUrl(filePath);
+
+    await supabase
+      .from('auction_images')
+      .insert({
+        auction_id: auctionId,
+        image_url: publicUrl,
+        is_main: false,
+        sort_order: 0,
+        created_at: new Date().toISOString()
+      });
+
+    res.json({
+      success: true,
+      message: '✅ تم رفع الصورة بنجاح',
+      url: publicUrl
+    });
+
+  } catch (error) {
+    console.error('❌ خطأ في رفع الصورة للمزاد:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في رفع الصورة'
+    });
+  }
+});
+
+// ✅ رفع صور متعددة لمزاد
+app.post('/api/auctions/:id/upload-images', authenticate, upload.array('images', 10), async (req, res) => {
+  try {
+    const auctionId = req.params.id;
+    const files = req.files;
+    
+    if (!files || files.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ لم يتم إرسال صور'
+      });
+    }
+
+    const uploadedUrls = [];
+
+    for (let i = 0; i < files.length; i++) {
+      try {
+        const file = files[i];
+        const fileName = `auction_${auctionId}_${Date.now()}_${i}_${file.originalname}`;
+        const filePath = `auctions/${fileName}`;
+
+        const { error } = await supabase.storage
+          .from('auction_images')
+          .upload(filePath, file.buffer, {
+            contentType: file.mimetype,
+            cacheControl: '3600',
+            upsert: false
+          });
+
+        if (error) continue;
+
+        const publicUrl = supabase.storage
+          .from('auction_images')
+          .getPublicUrl(filePath);
+        uploadedUrls.push(publicUrl);
+
+        await supabase
+          .from('auction_images')
+          .insert({
+            auction_id: auctionId,
+            image_url: publicUrl,
+            is_main: i === 0,
+            sort_order: i,
+            created_at: new Date().toISOString()
+          });
+
+      } catch (err) {
+        console.error(`❌ فشل رفع الصورة ${i + 1}:`, err.message);
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `✅ تم رفع ${uploadedUrls.length}/${files.length} صور`,
+      urls: uploadedUrls
+    });
+
+  } catch (error) {
+    console.error('❌ خطأ في رفع الصور للمزاد:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في رفع الصور'
+    });
+  }
+});
+
+// ✅ حذف صورة
+app.delete('/api/images/:path', authenticate, async (req, res) => {
+  try {
+    const { path: imagePath } = req.params;
+    
+    const { error } = await supabase.storage
+      .from('product_images')
+      .remove([imagePath]);
+
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        message: '❌ فشل حذف الصورة',
+        error: error.message
+      });
+    }
+
+    res.json({
+      success: true,
+      message: '✅ تم حذف الصورة بنجاح'
+    });
+
+  } catch (error) {
+    console.error('❌ خطأ في حذف الصورة:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في حذف الصورة'
+    });
+  }
+});
+
+// ============================================
+// 🔐 2. نقاط نهاية المصادقة
 // ============================================
 
 // ✅ تسجيل مستخدم جديد
@@ -601,7 +893,7 @@ app.post('/api/auth/login', async (req, res) => {
   }
 });
 
-// ✅ تسجيل الخروج (محمي)
+// ✅ تسجيل الخروج
 app.post('/api/auth/logout', authenticate, async (req, res) => {
   try {
     const { error } = await supabase.auth.signOut();
@@ -664,7 +956,7 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
-// ✅ التحقق من صحة التوكن (محمي)
+// ✅ التحقق من صحة التوكن
 app.get('/api/auth/verify-token', authenticate, (req, res) => {
   res.json({
     success: true,
@@ -673,20 +965,323 @@ app.get('/api/auth/verify-token', authenticate, (req, res) => {
 });
 
 // ============================================
-// 💰 2. مجموعة المدفوعات (Payments)
+// 🔐 2.1 نقاط نهاية المصادقة - الإضافات الجديدة
 // ============================================
 
-// ✅ جلب الباقات المتاحة (عام - بدون مصادقة)
+// ✅ التحقق من الجهاز المسجل
+app.post('/api/auth/check-device', authenticate, async (req, res) => {
+  try {
+    const { userId, deviceId } = req.body;
+    
+    const { data: device, error } = await supabase
+      .from('user_devices')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('device_id', deviceId)
+      .eq('is_active', true)
+      .maybeSingle();
+    
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        message: '❌ فشل التحقق من الجهاز'
+      });
+    }
+    
+    res.json({
+      success: true,
+      isRegistered: device != null,
+      device: device
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في التحقق من الجهاز:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في الخادم'
+    });
+  }
+});
+
+// ✅ تسجيل جهاز جديد
+app.post('/api/auth/register-device', authenticate, async (req, res) => {
+  try {
+    const { userId, deviceId, deviceName } = req.body;
+    
+    // ✅ التحقق من عدم وجود جهاز آخر لنفس المستخدم
+    const { data: existingDevices, error: checkError } = await supabase
+      .from('user_devices')
+      .select('device_id')
+      .eq('user_id', userId)
+      .eq('is_active', true);
+    
+    if (checkError) {
+      return res.status(500).json({
+        success: false,
+        message: '❌ فشل التحقق من الأجهزة'
+      });
+    }
+    
+    if (existingDevices && existingDevices.length > 0) {
+      const isSameDevice = existingDevices.some(d => d.device_id === deviceId);
+      if (!isSameDevice) {
+        return res.status(409).json({
+          success: false,
+          message: '❌ هذا الحساب مسجل على جهاز آخر',
+          requiresVerification: true
+        });
+      }
+    }
+    
+    // ✅ تسجيل الجهاز
+    const { data: device, error } = await supabase
+      .from('user_devices')
+      .upsert({
+        user_id: userId,
+        device_id: deviceId,
+        device_name: deviceName || 'Unknown Device',
+        is_active: true,
+        last_used_at: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+    
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        message: '❌ فشل تسجيل الجهاز'
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: '✅ تم تسجيل الجهاز بنجاح',
+      device: device
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في تسجيل الجهاز:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في الخادم'
+    });
+  }
+});
+
+// ✅ حذف جهاز (في حالة الضياع) - مدير فقط
+app.delete('/api/auth/device/:deviceId', authenticate, isAdmin, async (req, res) => {
+  try {
+    const { deviceId } = req.params;
+    
+    const { error } = await supabase
+      .from('user_devices')
+      .update({
+        is_active: false,
+        revoked_at: new Date().toISOString(),
+      })
+      .eq('device_id', deviceId);
+    
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        message: '❌ فشل حذف الجهاز'
+      });
+    }
+    
+    res.json({
+      success: true,
+      message: '✅ تم حذف الجهاز بنجاح'
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في حذف الجهاز:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في الخادم'
+    });
+  }
+});
+
+// ✅ إرسال رمز التحقق
+app.post('/api/auth/send-verification-code', async (req, res) => {
+  try {
+    const { userId, email, phone, method, userName } = req.body;
+    
+    // ✅ توليد رمز عشوائي
+    const code = Math.floor(100000 + Math.random() * 900000).toString();
+    const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 دقائق
+    
+    // ✅ حفظ الرمز في قاعدة البيانات
+    await supabase
+      .from('verification_codes')
+      .insert({
+        user_id: userId,
+        code: code,
+        method: method || 'email',
+        expires_at: expiry.toISOString(),
+        created_at: new Date().toISOString(),
+      });
+    
+    // ✅ إرسال حسب الطريقة
+    let sent = false;
+    
+    if (method === 'email' || !method) {
+      // ✅ إرسال عبر البريد الإلكتروني
+      const subject = '🔐 رمز التحقق - Sell In';
+      const html = `
+        <h1>🔐 رمز التحقق الخاص بك</h1>
+        <p>مرحباً ${userName || 'مستخدمنا العزيز'},</p>
+        <p>رمز التحقق الخاص بك هو:</p>
+        <h2 style="font-size: 42px; color: #7F1D1D; letter-spacing: 8px;">${code}</h2>
+        <p>⏰ هذا الرمز صالح لمدة 5 دقائق</p>
+        <p>إذا لم تطلب هذا الرمز، يرجى تجاهل هذه الرسالة.</p>
+      `;
+      
+      sent = await sendEmailViaBrevo(email, subject, html);
+      
+    } else if (method === 'whatsapp') {
+      // ✅ إرسال عبر واتساب
+      const message = `🔐 Sell In - رمز التحقق: ${code} (صالح لمدة 5 دقائق)`;
+      // ✅ TODO: استخدام واتساب API
+      sent = true; // مؤقتاً
+      
+    } else if (method === 'sms') {
+      // ✅ إرسال عبر SMS
+      const message = `Sell In: رمز التحقق ${code} (صالح لمدة 5 دقائق)`;
+      // ✅ TODO: استخدام SMS API
+      sent = true; // مؤقتاً
+    }
+    
+    if (sent) {
+      res.json({
+        success: true,
+        message: '✅ تم إرسال رمز التحقق',
+        expiry: expiry.toISOString()
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        message: '❌ فشل إرسال رمز التحقق'
+      });
+    }
+    
+  } catch (error) {
+    console.error('❌ خطأ في إرسال رمز التحقق:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في الخادم'
+    });
+  }
+});
+
+// ✅ التحقق من الرمز
+app.post('/api/auth/verify-code', async (req, res) => {
+  try {
+    const { userId, code } = req.body;
+    
+    // ✅ البحث عن الرمز في قاعدة البيانات
+    const { data: verification, error } = await supabase
+      .from('verification_codes')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('code', code)
+      .gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    
+    if (error || !verification) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ رمز التحقق غير صحيح أو منتهي الصلاحية'
+      });
+    }
+    
+    // ✅ حذف الرمز بعد الاستخدام
+    await supabase
+      .from('verification_codes')
+      .delete()
+      .eq('id', verification.id);
+    
+    // ✅ تحديث حالة التحقق
+    await supabase
+      .from('users')
+      .update({
+        is_verified: true,
+        verified_at: new Date().toISOString(),
+      })
+      .eq('id', userId);
+    
+    res.json({
+      success: true,
+      message: '✅ تم التحقق بنجاح'
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في التحقق من الرمز:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في الخادم'
+    });
+  }
+});
+
+// ✅ الحصول على أجهزة المستخدم
+app.get('/api/auth/devices/:userId', authenticate, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    
+    // ✅ التحقق من الصلاحية
+    if (req.user.id !== userId && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
+      return res.status(403).json({
+        success: false,
+        message: '❌ ليس لديك صلاحية لعرض أجهزة مستخدم آخر'
+      });
+    }
+    
+    const { data: devices, error } = await supabase
+      .from('user_devices')
+      .select('*')
+      .eq('user_id', userId)
+      .order('last_used_at', { ascending: false });
+    
+    if (error) {
+      return res.status(500).json({
+        success: false,
+        message: '❌ فشل جلب الأجهزة'
+      });
+    }
+    
+    res.json({
+      success: true,
+      devices: devices || []
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب الأجهزة:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في الخادم'
+    });
+  }
+});
+
+// ============================================
+// 💰 3. نقاط نهاية الباقات والمدفوعات
+// ============================================
+
+// ✅ جلب الباقات
 app.get('/api/payments/subscriptions', async (req, res) => {
   try {
     const { data: subscriptions, error } = await supabase
       .from('subscriptions')
       .select('*')
       .eq('is_active', true)
-      .order('duration_days', { ascending: true });
+      .order('sort_order', { ascending: true });
     
     if (error) {
-      console.error('❌ فشل جلب الباقات:', error);
       return res.status(500).json({ 
         success: false, 
         message: '❌ فشل جلب الباقات' 
@@ -707,7 +1302,38 @@ app.get('/api/payments/subscriptions', async (req, res) => {
   }
 });
 
-// ✅ جلب طرق الدفع حسب الدولة (عام - بدون مصادقة)
+// ✅ جلب إصدار الباقات (للكاش)
+app.get('/api/payments/subscriptions/version', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('subscriptions')
+      .select('updated_at')
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب الإصدار' 
+      });
+    }
+    
+    const version = data && data.length > 0 
+      ? new Date(data[0].updated_at).getTime() 
+      : Date.now();
+    
+    res.json({
+      success: true,
+      data: { version: version }
+    });
+    
+  } catch (error) {
+    res.json({ success: true, data: { version: Date.now() } });
+  }
+});
+
+// ✅ جلب طرق الدفع
 app.get('/api/payments/payment-methods', async (req, res) => {
   try {
     const { country_code } = req.query;
@@ -725,7 +1351,6 @@ app.get('/api/payments/payment-methods', async (req, res) => {
     const { data: paymentMethods, error } = await query;
     
     if (error) {
-      console.error('❌ فشل جلب طرق الدفع:', error);
       return res.status(500).json({ 
         success: false, 
         message: '❌ فشل جلب طرق الدفع' 
@@ -746,7 +1371,31 @@ app.get('/api/payments/payment-methods', async (req, res) => {
   }
 });
 
-// ✅ التحقق من صحة كود المحفظة (محمي - يحتاج مصادقة)
+// ✅ جلب إصدار طرق الدفع
+app.get('/api/payments/payment-methods/version', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('payment_methods')
+      .select('updated_at')
+      .eq('is_active', true)
+      .order('updated_at', { ascending: false })
+      .limit(1);
+    
+    const version = data && data.length > 0 
+      ? new Date(data[0].updated_at).getTime() 
+      : Date.now();
+    
+    res.json({
+      success: true,
+      data: { version: version }
+    });
+    
+  } catch (error) {
+    res.json({ success: true, data: { version: Date.now() } });
+  }
+});
+
+// ✅ التحقق من صحة كود المحفظة
 app.post('/api/payments/verify-wallet-code', authenticate, async (req, res) => {
   try {
     const { code, walletId, amount } = req.body;
@@ -806,7 +1455,7 @@ app.post('/api/payments/verify-wallet-code', authenticate, async (req, res) => {
   }
 });
 
-// ✅ تفعيل الاشتراك (محمي - يحتاج مصادقة)
+// ✅ تفعيل الاشتراك
 app.post('/api/payments/activate-subscription', authenticate, async (req, res) => {
   try {
     const { userId, subscriptionId, code, walletId, amount } = req.body;
@@ -941,7 +1590,7 @@ app.post('/api/payments/activate-subscription', authenticate, async (req, res) =
   }
 });
 
-// ✅ جلب معاملات المستخدم (محمي - يحتاج مصادقة)
+// ✅ جلب معاملات المستخدم
 app.get('/api/payments/transactions/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -981,10 +1630,10 @@ app.get('/api/payments/transactions/:userId', authenticate, async (req, res) => 
 });
 
 // ============================================
-// 🏦 3. مجموعة المحافظ (Wallets) - متوافقة مع هيكل قاعدة البيانات
+// 🏦 4. نقاط نهاية المحافظ
 // ============================================
 
-// ✅ جلب المحافظ المتاحة (عام - بدون مصادقة)
+// ✅ جلب المحافظ المتاحة
 app.get('/api/wallets/available', async (req, res) => {
   try {
     const { data: wallets, error } = await supabase
@@ -1011,7 +1660,6 @@ app.get('/api/wallets/available', async (req, res) => {
       });
     }
     
-    // ✅ تحويل البيانات إلى الشكل المطلوب مع الحفاظ على جميع الأعمدة
     const formattedWallets = wallets.map(wallet => ({
       id: wallet.id,
       wallet_number: wallet.wallet_number,
@@ -1043,7 +1691,7 @@ app.get('/api/wallets/available', async (req, res) => {
   }
 });
 
-// ✅ جلب رصيد المستخدم في محفظة (محمي - يحتاج مصادقة)
+// ✅ جلب رصيد المستخدم في محفظة
 app.get('/api/wallets/balance/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1084,7 +1732,7 @@ app.get('/api/wallets/balance/:userId', authenticate, async (req, res) => {
   }
 });
 
-// ✅ خصم رصيد من المحفظة (محمي - يحتاج مصادقة)
+// ✅ خصم رصيد من المحفظة
 app.post('/api/wallets/deduct-balance', authenticate, async (req, res) => {
   try {
     const { userId, walletId, amount, transactionType, referenceId, description } = req.body;
@@ -1174,7 +1822,7 @@ app.post('/api/wallets/deduct-balance', authenticate, async (req, res) => {
   }
 });
 
-// ✅ إنشاء كود شراء (محمي - يحتاج مصادقة)
+// ✅ إنشاء كود شراء
 app.post('/api/wallets/create-purchase-code', authenticate, async (req, res) => {
   try {
     const { userId, amount, walletId, expiryMinutes } = req.body;
@@ -1235,7 +1883,7 @@ app.post('/api/wallets/create-purchase-code', authenticate, async (req, res) => 
   }
 });
 
-// ✅ صرف كود الشراء (محمي - يحتاج مصادقة)
+// ✅ صرف كود الشراء
 app.post('/api/wallets/redeem-code', authenticate, async (req, res) => {
   try {
     const { code, userId } = req.body;
@@ -1352,7 +2000,7 @@ app.post('/api/wallets/redeem-code', authenticate, async (req, res) => {
   }
 });
 
-// ✅ جلب أكواد المستخدم (محمي - يحتاج مصادقة)
+// ✅ جلب أكواد المستخدم
 app.get('/api/wallets/user-codes/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1392,10 +2040,105 @@ app.get('/api/wallets/user-codes/:userId', authenticate, async (req, res) => {
 });
 
 // ============================================
-// 👤 4. مجموعة المستخدمين (Users) - محمية
+// 🎯 5. نقاط نهاية الفلاتر
 // ============================================
 
-// ✅ جلب بيانات المستخدم الحالي (محمي)
+// ✅ جلب الفلاتر
+app.get('/api/filters', async (req, res) => {
+  try {
+    // جلب الفلاتر الذكية
+    const { data: smartFilters } = await supabase
+      .from('smart_filters')
+      .select('*')
+      .eq('is_active', true)
+      .order('sort_order', { ascending: true });
+    
+    // جلب الفلاتر العامة
+    const { data: appFilters } = await supabase
+      .from('app_filters')
+      .select('*')
+      .eq('category', 'filters')
+      .maybeSingle();
+    
+    // دمج البيانات
+    const mergedData = appFilters?.values ?? {};
+    
+    // إضافة الفلاتر الذكية
+    const filtersByCategory = {};
+    
+    for (var filter of (smartFilters ?? [])) {
+      const categoryId = filter.category_id;
+      const filterKey = filter.filter_key;
+      const options = filter.options ?? [];
+      
+      if (options.length === 0) continue;
+      
+      if (!filtersByCategory[categoryId]) {
+        filtersByCategory[categoryId] = {};
+      }
+      filtersByCategory[categoryId][filterKey] = options;
+    }
+    
+    mergedData.smart_filters = filtersByCategory;
+    
+    // استخراج الفلاتر العامة
+    const conditions = [];
+    const agencyTypes = [];
+    
+    for (var filter of (smartFilters ?? [])) {
+      if (filter.filter_key.includes('condition')) {
+        conditions.push(...(filter.options ?? []));
+      }
+      if (filter.filter_key.includes('agency')) {
+        agencyTypes.push(...(filter.options ?? []));
+      }
+    }
+    
+    mergedData.conditions = [...new Set(conditions)];
+    mergedData.agencyTypes = [...new Set(agencyTypes)];
+    
+    res.json({
+      success: true,
+      data: mergedData
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب الفلاتر:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ جلب إصدار الفلاتر
+app.get('/api/filters/version', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('app_filters')
+      .select('last_updated')
+      .eq('category', 'filters')
+      .maybeSingle();
+    
+    const version = data != null 
+      ? new Date(data.last_updated).getTime() 
+      : Date.now();
+    
+    res.json({
+      success: true,
+      data: { version: version }
+    });
+    
+  } catch (error) {
+    res.json({ success: true, data: { version: Date.now() } });
+  }
+});
+
+// ============================================
+// 👤 6. نقاط نهاية المستخدمين
+// ============================================
+
+// ✅ جلب بيانات المستخدم الحالي
 app.get('/api/users/profile/me', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -1427,7 +2170,7 @@ app.get('/api/users/profile/me', authenticate, async (req, res) => {
   }
 });
 
-// ✅ جلب بيانات مستخدم معين (محمي - مدير فقط)
+// ✅ جلب بيانات مستخدم معين (مدير فقط)
 app.get('/api/users/profile/:userId', authenticate, isAdmin, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1459,7 +2202,7 @@ app.get('/api/users/profile/:userId', authenticate, isAdmin, async (req, res) =>
   }
 });
 
-// ✅ تحديث بيانات المستخدم (محمي)
+// ✅ تحديث بيانات المستخدم
 app.put('/api/users/profile/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1511,7 +2254,7 @@ app.put('/api/users/profile/:userId', authenticate, async (req, res) => {
   }
 });
 
-// ✅ جلب تخصصات المستخدم (محمي)
+// ✅ جلب تخصصات المستخدم
 app.get('/api/users/specializations/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1550,7 +2293,7 @@ app.get('/api/users/specializations/:userId', authenticate, async (req, res) => 
   }
 });
 
-// ✅ تحديث تخصصات المستخدم (محمي)
+// ✅ تحديث تخصصات المستخدم
 app.put('/api/users/specializations/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1601,10 +2344,10 @@ app.put('/api/users/specializations/:userId', authenticate, async (req, res) => 
 });
 
 // ============================================
-// 🛒 5. مجموعة المنتجات والطلبات
+// 🛒 7. نقاط نهاية المنتجات والطلبات
 // ============================================
 
-// ✅ جلب قائمة المنتجات (عام)
+// ✅ جلب قائمة المنتجات
 app.get('/api/products', async (req, res) => {
   try {
     const { category, seller, limit = 50, offset = 0 } = req.query;
@@ -1648,7 +2391,7 @@ app.get('/api/products', async (req, res) => {
   }
 });
 
-// ✅ جلب تفاصيل منتج (عام)
+// ✅ جلب تفاصيل منتج
 app.get('/api/products/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -1685,7 +2428,7 @@ app.get('/api/products/:id', async (req, res) => {
   }
 });
 
-// ✅ إضافة منتج جديد (محمي)
+// ✅ إضافة منتج جديد
 app.post('/api/products', authenticate, async (req, res) => {
   try {
     const productData = req.body;
@@ -1740,7 +2483,7 @@ app.post('/api/products', authenticate, async (req, res) => {
   }
 });
 
-// ✅ إنشاء طلب شراء (محمي)
+// ✅ إنشاء طلب شراء
 app.post('/api/orders', authenticate, async (req, res) => {
   try {
     const { 
@@ -1812,7 +2555,7 @@ app.post('/api/orders', authenticate, async (req, res) => {
   }
 });
 
-// ✅ جلب طلبات المستخدم (محمي)
+// ✅ جلب طلبات المستخدم
 app.get('/api/orders/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
@@ -1851,7 +2594,7 @@ app.get('/api/orders/:userId', authenticate, async (req, res) => {
   }
 });
 
-// ✅ تحديث حالة الطلب (محمي - مدير فقط)
+// ✅ تحديث حالة الطلب (مدير فقط)
 app.put('/api/orders/:orderId/status', authenticate, isAdmin, async (req, res) => {
   try {
     const { orderId } = req.params;
@@ -1921,174 +2664,10 @@ app.put('/api/orders/:orderId/status', authenticate, isAdmin, async (req, res) =
 });
 
 // ============================================
-// 📧 7. مجموعة الإيميلات (Email)
+// 🏆 8. نقاط نهاية المزادات (Auctions)
 // ============================================
 
-// ✅ إرسال إيميل عام (محمي)
-app.post('/api/email/send', authenticate, async (req, res) => {
-  const startTime = Date.now();
-  console.log(`📧 [${new Date().toISOString()}] بدء إرسال إيميل (API)`);
-
-  try {
-    const { to, subject, html, text } = req.body;
-
-    if (!to || !subject) {
-      return res.status(400).json({
-        success: false,
-        message: '❌ البريد الإلكتروني والموضوع مطلوبان',
-      });
-    }
-
-    console.log(`📧 إلى: ${to}`);
-    console.log(`📧 الموضوع: ${subject}`);
-
-    const result = await sendEmailViaBrevo(to, subject, html, text);
-
-    const duration = Date.now() - startTime;
-
-    if (result) {
-      console.log(`✅ [${new Date().toISOString()}] تم الإرسال في ${duration}ms`);
-      res.json({
-        success: true,
-        message: '✅ تم إرسال الإيميل بنجاح',
-        duration: duration,
-      });
-    } else {
-      console.error(`❌ [${new Date().toISOString()}] فشل الإرسال بعد ${duration}ms`);
-      res.status(500).json({
-        success: false,
-        message: '❌ فشل إرسال الإيميل، حاول مرة أخرى',
-        duration: duration,
-      });
-    }
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    console.error(`❌ [${new Date().toISOString()}] خطأ:`, error.message);
-    res.status(500).json({
-      success: false,
-      message: '❌ فشل إرسال الإيميل',
-    });
-  }
-});
-
-// ✅ إرسال إيميل التفعيل (عام)
-app.post('/api/email/send-verification', async (req, res) => {
-  try {
-    const { to, token } = req.body;
-
-    if (!to || !token) {
-      return res.status(400).json({
-        success: false,
-        message: '❌ البريد الإلكتروني والرمز مطلوبان',
-      });
-    }
-
-    const subject = '✅ تفعيل حسابك في Sell In';
-    const html = buildVerificationEmailHtml(token);
-
-    const result = await sendEmailViaBrevo(to, subject, html);
-
-    if (result) {
-      res.json({
-        success: true,
-        message: '✅ تم إرسال إيميل التفعيل بنجاح',
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: '❌ فشل إرسال إيميل التفعيل',
-      });
-    }
-  } catch (error) {
-    console.error('❌ فشل إرسال إيميل التفعيل:', error);
-    res.status(500).json({
-      success: false,
-      message: '❌ فشل إرسال إيميل التفعيل',
-    });
-  }
-});
-
-// ✅ إرسال إيميل إعادة تعيين كلمة المرور (عام)
-app.post('/api/email/send-password-reset', async (req, res) => {
-  try {
-    const { to, token } = req.body;
-
-    if (!to || !token) {
-      return res.status(400).json({
-        success: false,
-        message: '❌ البريد الإلكتروني والرمز مطلوبان',
-      });
-    }
-
-    console.log(`📧 إرسال إعادة تعيين كلمة المرور إلى: ${to}`);
-
-    const subject = '🔐 إعادة تعيين كلمة المرور - Sell In';
-    const html = buildPasswordResetEmailHtml(token);
-
-    const result = await sendEmailViaBrevo(to, subject, html);
-
-    if (result) {
-      res.json({
-        success: true,
-        message: '✅ تم إرسال إيميل إعادة تعيين كلمة المرور بنجاح',
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: '❌ فشل إرسال الإيميل، حاول مرة أخرى',
-      });
-    }
-  } catch (error) {
-    console.error('❌ فشل إرسال إعادة تعيين كلمة المرور:', error);
-    res.status(500).json({
-      success: false,
-      message: '❌ فشل إرسال الإيميل',
-    });
-  }
-});
-
-// ✅ إرسال إيميل التحقق من الجهاز (محمي)
-app.post('/api/email/send-device-verification', authenticate, async (req, res) => {
-  try {
-    const { to, token } = req.body;
-
-    if (!to || !token) {
-      return res.status(400).json({
-        success: false,
-        message: '❌ البريد الإلكتروني والرمز مطلوبان',
-      });
-    }
-
-    const subject = '🔐 رمز التحقق لتسجيل الدخول - Sell In';
-    const html = buildDeviceVerificationEmailHtml(token);
-
-    const result = await sendEmailViaBrevo(to, subject, html);
-
-    if (result) {
-      res.json({
-        success: true,
-        message: '✅ تم إرسال رمز التحقق بنجاح',
-      });
-    } else {
-      res.status(500).json({
-        success: false,
-        message: '❌ فشل إرسال رمز التحقق',
-      });
-    }
-  } catch (error) {
-    console.error('❌ فشل إرسال رمز التحقق:', error);
-    res.status(500).json({
-      success: false,
-      message: '❌ فشل إرسال رمز التحقق',
-    });
-  }
-});
-
-// ============================================
-// 🏆 8. مجموعة المزادات (Auctions) - NEW
-// ============================================
-
-// ✅ جلب جميع المزادات (عام)
+// ✅ جلب جميع المزادات
 app.get('/api/auctions', async (req, res) => {
   try {
     const { status, category, seller, limit = 50, offset = 0 } = req.query;
@@ -2141,7 +2720,7 @@ app.get('/api/auctions', async (req, res) => {
   }
 });
 
-// ✅ جلب المزادات النشطة (عام)
+// ✅ جلب المزادات النشطة
 app.get('/api/auctions/active', async (req, res) => {
   try {
     const { category, limit = 50, offset = 0 } = req.query;
@@ -2185,7 +2764,7 @@ app.get('/api/auctions/active', async (req, res) => {
   }
 });
 
-// ✅ جلب تفاصيل مزاد (عام)
+// ✅ جلب تفاصيل مزاد
 app.get('/api/auctions/:id', async (req, res) => {
   try {
     const { id } = req.params;
@@ -2227,7 +2806,7 @@ app.get('/api/auctions/:id', async (req, res) => {
   }
 });
 
-// ✅ جلب صور المزاد (عام)
+// ✅ جلب صور المزاد
 app.get('/api/auctions/:id/images', async (req, res) => {
   try {
     const { id } = req.params;
@@ -2259,7 +2838,7 @@ app.get('/api/auctions/:id/images', async (req, res) => {
   }
 });
 
-// ✅ جلب تاريخ المزاد (عام)
+// ✅ جلب تاريخ المزاد
 app.get('/api/auctions/:id/history', async (req, res) => {
   try {
     const { id } = req.params;
@@ -2291,7 +2870,7 @@ app.get('/api/auctions/:id/history', async (req, res) => {
   }
 });
 
-// ✅ إنشاء مزاد جديد (محمي)
+// ✅ إنشاء مزاد جديد
 app.post('/api/auctions', authenticate, async (req, res) => {
   try {
     const { 
@@ -2389,7 +2968,7 @@ app.post('/api/auctions', authenticate, async (req, res) => {
   }
 });
 
-// ✅ تقديم عرض في المزاد (محمي)
+// ✅ تقديم عرض في المزاد
 app.post('/api/auctions/:id/bid', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
@@ -2497,7 +3076,7 @@ app.post('/api/auctions/:id/bid', authenticate, async (req, res) => {
   }
 });
 
-// ✅ جلب عروض المزاد (عام)
+// ✅ جلب عروض المزاد
 app.get('/api/auctions/:id/bids', async (req, res) => {
   try {
     const { id } = req.params;
@@ -2529,7 +3108,7 @@ app.get('/api/auctions/:id/bids', async (req, res) => {
   }
 });
 
-// ✅ إنهاء المزاد (محمي - البائع أو المدير)
+// ✅ إنهاء المزاد
 app.put('/api/auctions/:id/end', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
@@ -2578,8 +3157,7 @@ app.put('/api/auctions/:id/end', authenticate, async (req, res) => {
         .eq('auction_id', id);
     }
     
-    // ✅ تسجيل في سجل المزاد
-    await supabase
+    // ✅ تسجيل في سجل المزاد    await supabase
       .from('auction_history')
       .insert({
         auction_id: id,
@@ -2605,7 +3183,7 @@ app.put('/api/auctions/:id/end', authenticate, async (req, res) => {
   }
 });
 
-// ✅ إلغاء المزاد (محمي - البائع أو المدير)
+// ✅ إلغاء المزاد
 app.put('/api/auctions/:id/cancel', authenticate, async (req, res) => {
   try {
     const { id } = req.params;
@@ -2671,14 +3249,23 @@ app.put('/api/auctions/:id/cancel', authenticate, async (req, res) => {
   }
 });
 
-// ✅ زيادة مشاهدات المزاد (عام)
+// ✅ زيادة مشاهدات المزاد
 app.post('/api/auctions/:id/view', async (req, res) => {
   try {
     const { id } = req.params;
     
-    await supabase.rpc('increment_auction_views', {
-      p_auction_id: id
-    });
+    const { data: auction } = await supabase
+      .from('auctions')
+      .select('views_count')
+      .eq('id', id)
+      .maybeSingle();
+    
+    const currentViews = auction?.views_count || 0;
+    
+    await supabase
+      .from('auctions')
+      .update({ views_count: currentViews + 1 })
+      .eq('id', id);
     
     res.json({
       success: true,
@@ -2695,10 +3282,10 @@ app.post('/api/auctions/:id/view', async (req, res) => {
 });
 
 // ============================================
-// 🎫 9. مجموعة اشتراكات المزادات (Auction Subscriptions)
+// 🎫 9. نقاط نهاية اشتراكات المزادات
 // ============================================
 
-// ✅ جلب باقات اشتراكات المزادات (عام)
+// ✅ جلب باقات اشتراكات المزادات
 app.get('/api/auction-subscriptions', async (req, res) => {
   try {
     const { data: subscriptions, error } = await supabase
@@ -2728,7 +3315,7 @@ app.get('/api/auction-subscriptions', async (req, res) => {
   }
 });
 
-// ✅ شراء اشتراك مزادات (محمي)
+// ✅ شراء اشتراك مزادات
 app.post('/api/auction-subscriptions/purchase', authenticate, async (req, res) => {
   try {
     const { subscription_id, user_id, amount, currency, payment_method_id } = req.body;
@@ -2817,7 +3404,7 @@ app.post('/api/auction-subscriptions/purchase', authenticate, async (req, res) =
   }
 });
 
-// ✅ جلب اشتراك المستخدم الحالي (محمي)
+// ✅ جلب اشتراك المستخدم الحالي
 app.get('/api/auction-subscriptions/my', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -2854,7 +3441,7 @@ app.get('/api/auction-subscriptions/my', authenticate, async (req, res) => {
   }
 });
 
-// ✅ تحديث استخدام المزادات (خصم مزاد) (محمي)
+// ✅ تحديث استخدام المزادات (خصم مزاد)
 app.put('/api/auction-subscriptions/use', authenticate, async (req, res) => {
   try {
     const userId = req.user.id;
@@ -2908,10 +3495,10 @@ app.put('/api/auction-subscriptions/use', authenticate, async (req, res) => {
 });
 
 // ============================================
-// 📊 10. مجموعة المدير (Admin) - محمية
+// 📊 10. نقاط نهاية المدير (Admin)
 // ============================================
 
-// ✅ إحصائيات النظام (محمي - مدير فقط)
+// ✅ إحصائيات النظام
 app.get('/api/admin/stats', authenticate, isAdmin, async (req, res) => {
   try {
     const { count: usersCount } = await supabase
@@ -2962,7 +3549,7 @@ app.get('/api/admin/stats', authenticate, isAdmin, async (req, res) => {
   }
 });
 
-// ✅ جلب قائمة المستخدمين (محمي - مدير فقط)
+// ✅ جلب قائمة المستخدمين
 app.get('/api/admin/users', authenticate, isAdmin, async (req, res) => {
   try {
     const { limit = 50, offset = 0 } = req.query;
@@ -2995,7 +3582,7 @@ app.get('/api/admin/users', authenticate, isAdmin, async (req, res) => {
   }
 });
 
-// ✅ جلب جميع المعاملات (محمي - مدير فقط)
+// ✅ جلب جميع المعاملات
 app.get('/api/admin/transactions', authenticate, isAdmin, async (req, res) => {
   try {
     const { limit = 50, offset = 0 } = req.query;
@@ -3028,7 +3615,7 @@ app.get('/api/admin/transactions', authenticate, isAdmin, async (req, res) => {
   }
 });
 
-// ✅ جلب جميع المزادات للمدير (محمي - مدير فقط)
+// ✅ جلب جميع المزادات للمدير
 app.get('/api/admin/auctions', authenticate, isAdmin, async (req, res) => {
   try {
     const { status, limit = 50, offset = 0 } = req.query;
@@ -3073,24 +3660,19 @@ app.get('/api/admin/auctions', authenticate, isAdmin, async (req, res) => {
 });
 
 // ============================================
-// 🛡️ معالجة الأخطاء بشكل آمن
+// 🛡️ معالجة الأخطاء
 // ============================================
-
 app.use((err, req, res, next) => {
-  const isProduction = process.env.NODE_ENV === 'production';
-  
   console.error('❌ Server Error:', err.message);
-  
   res.status(err.status || 500).json({
     success: false,
-    message: isProduction ? 'Internal Server Error' : err.message
+    message: err.message || 'Internal Server Error'
   });
 });
 
 // ============================================
-// 🚀 تشغيل الخادم (آمن)
+// 🚀 تشغيل الخادم
 // ============================================
-
 const server = app.listen(PORT, () => {
   console.log(`✅ Server started on port ${PORT}`);
   console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
@@ -3098,21 +3680,12 @@ const server = app.listen(PORT, () => {
   console.log(`🔐 JWT: ${process.env.JWT_SECRET ? '✅ Configured' : '❌ Missing'}`);
 });
 
-// ✅ إغلاق الخادم بشكل آمن
 process.on('SIGTERM', () => {
-  console.log('🛑 Received SIGTERM, closing server...');
-  server.close(() => {
-    console.log('✅ Server closed');
-    process.exit(0);
-  });
+  server.close(() => process.exit(0));
 });
 
 process.on('SIGINT', () => {
-  console.log('🛑 Received SIGINT, closing server...');
-  server.close(() => {
-    console.log('✅ Server closed');
-    process.exit(0);
-  });
+  server.close(() => process.exit(0));
 });
 
 module.exports = app;
