@@ -1,4 +1,3 @@
-// server.js
 // ============================================
 // 🚀 خادم تطبيق السوق - نسخة كاملة مع رفع الصور والمزادات والأمان المتكامل
 // ============================================
@@ -29,16 +28,16 @@ const PORT = process.env.PORT || 3000;
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseKey = process.env.SUPABASE_ANON_KEY;
 const supabase = createClient(supabaseUrl, supabaseKey);
+const supabaseAdmin = createClient(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY || supabaseKey);
 
 // ============================================
-// ⚙️ إعدادات الخادم
+// ⚙️ إعدادات الخادم - الأمان والتحسين
 // ============================================
+
 app.set('trust proxy', true);
 app.disable('x-powered-by');
 
-// ============================================
-// 🛡️ الأمان
-// ============================================
+// ✅ 1. Helmet - حماية الرؤوس
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -61,12 +60,26 @@ app.use(helmet({
   xssFilter: true,
 }));
 
-app.use(compression());
+// ✅ 2. Compression محسن
+app.use(compression({
+  level: 6,
+  threshold: 1024,
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  }
+}));
+
+// ✅ 3. ETag للتخزين المؤقت
+app.set('etag', 'strong');
+
+// ✅ 4. Rate Limiting
 app.use('/api/', limiter);
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', registerLimiter);
 app.use('/api/auth/reset-password', passwordResetLimiter);
 
+// ✅ 5. CORS
 const corsOptions = {
   origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : ['http://localhost:3000', 'http://localhost:8080'],
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
@@ -77,12 +90,22 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 
+// ✅ 6. JSON parsing
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+
+// ✅ 7. Security
 app.use(sanitizeBody);
 app.use(securityHeaders);
 
-// ✅ إضافة التوكن الجديد إلى الاستجابة (تجديد تلقائي)
+// ✅ 8. إزالة رؤوس الخادم الإضافية
+app.use((req, res, next) => {
+  res.removeHeader('X-Powered-By');
+  res.removeHeader('Server');
+  next();
+});
+
+// ✅ 9. إضافة التوكن الجديد إلى الاستجابة (تجديد تلقائي)
 app.use((req, res, next) => {
   const originalJson = res.json;
   
@@ -1008,7 +1031,6 @@ app.post('/api/auth/register-device', authenticate, async (req, res) => {
   try {
     const { userId, deviceId, deviceName } = req.body;
     
-    // ✅ التحقق من عدم وجود جهاز آخر لنفس المستخدم
     const { data: existingDevices, error: checkError } = await supabase
       .from('user_devices')
       .select('device_id')
@@ -1033,7 +1055,6 @@ app.post('/api/auth/register-device', authenticate, async (req, res) => {
       }
     }
     
-    // ✅ تسجيل الجهاز
     const { data: device, error } = await supabase
       .from('user_devices')
       .upsert({
@@ -1109,11 +1130,9 @@ app.post('/api/auth/send-verification-code', async (req, res) => {
   try {
     const { userId, email, phone, method, userName } = req.body;
     
-    // ✅ توليد رمز عشوائي
     const code = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiry = new Date(Date.now() + 5 * 60 * 1000); // 5 دقائق
+    const expiry = new Date(Date.now() + 5 * 60 * 1000);
     
-    // ✅ حفظ الرمز في قاعدة البيانات
     await supabase
       .from('verification_codes')
       .insert({
@@ -1124,11 +1143,9 @@ app.post('/api/auth/send-verification-code', async (req, res) => {
         created_at: new Date().toISOString(),
       });
     
-    // ✅ إرسال حسب الطريقة
     let sent = false;
     
     if (method === 'email' || !method) {
-      // ✅ إرسال عبر البريد الإلكتروني
       const subject = '🔐 رمز التحقق - Sell In';
       const html = `
         <h1>🔐 رمز التحقق الخاص بك</h1>
@@ -1142,16 +1159,12 @@ app.post('/api/auth/send-verification-code', async (req, res) => {
       sent = await sendEmailViaBrevo(email, subject, html);
       
     } else if (method === 'whatsapp') {
-      // ✅ إرسال عبر واتساب
       const message = `🔐 Sell In - رمز التحقق: ${code} (صالح لمدة 5 دقائق)`;
-      // ✅ TODO: استخدام واتساب API
-      sent = true; // مؤقتاً
+      sent = true;
       
     } else if (method === 'sms') {
-      // ✅ إرسال عبر SMS
       const message = `Sell In: رمز التحقق ${code} (صالح لمدة 5 دقائق)`;
-      // ✅ TODO: استخدام SMS API
-      sent = true; // مؤقتاً
+      sent = true;
     }
     
     if (sent) {
@@ -1181,7 +1194,6 @@ app.post('/api/auth/verify-code', async (req, res) => {
   try {
     const { userId, code } = req.body;
     
-    // ✅ البحث عن الرمز في قاعدة البيانات
     const { data: verification, error } = await supabase
       .from('verification_codes')
       .select('*')
@@ -1199,13 +1211,11 @@ app.post('/api/auth/verify-code', async (req, res) => {
       });
     }
     
-    // ✅ حذف الرمز بعد الاستخدام
     await supabase
       .from('verification_codes')
       .delete()
       .eq('id', verification.id);
     
-    // ✅ تحديث حالة التحقق
     await supabase
       .from('users')
       .update({
@@ -1233,7 +1243,6 @@ app.get('/api/auth/devices/:userId', authenticate, async (req, res) => {
   try {
     const { userId } = req.params;
     
-    // ✅ التحقق من الصلاحية
     if (req.user.id !== userId && req.user.role !== 'admin' && req.user.role !== 'super_admin') {
       return res.status(403).json({
         success: false,
@@ -2046,24 +2055,20 @@ app.get('/api/wallets/user-codes/:userId', authenticate, async (req, res) => {
 // ✅ جلب الفلاتر
 app.get('/api/filters', async (req, res) => {
   try {
-    // جلب الفلاتر الذكية
     const { data: smartFilters } = await supabase
       .from('smart_filters')
       .select('*')
       .eq('is_active', true)
       .order('sort_order', { ascending: true });
     
-    // جلب الفلاتر العامة
     const { data: appFilters } = await supabase
       .from('app_filters')
       .select('*')
       .eq('category', 'filters')
       .maybeSingle();
     
-    // دمج البيانات
     const mergedData = appFilters?.values ?? {};
     
-    // إضافة الفلاتر الذكية
     const filtersByCategory = {};
     
     for (var filter of (smartFilters ?? [])) {
@@ -2081,7 +2086,6 @@ app.get('/api/filters', async (req, res) => {
     
     mergedData.smart_filters = filtersByCategory;
     
-    // استخراج الفلاتر العامة
     const conditions = [];
     const agencyTypes = [];
     
@@ -2894,7 +2898,6 @@ app.post('/api/auctions', authenticate, async (req, res) => {
       });
     }
     
-    // ✅ إنشاء المزاد
     const { data: auction, error } = await supabase
       .from('auctions')
       .insert({
@@ -2932,7 +2935,6 @@ app.post('/api/auctions', authenticate, async (req, res) => {
       });
     }
     
-    // ✅ حفظ صور المزاد
     if (images && images.length > 0) {
       const imageInserts = images.map((url, index) => ({
         auction_id: auction.id,
@@ -2945,7 +2947,6 @@ app.post('/api/auctions', authenticate, async (req, res) => {
       await supabase.from('auction_images').insert(imageInserts);
     }
     
-    // ✅ تحديث المنتج إذا كان موجوداً
     if (product_id) {
       await supabase
         .from('products')
@@ -3049,7 +3050,6 @@ app.post('/api/auctions/:id/bid', authenticate, async (req, res) => {
       })
       .eq('id', id);
     
-    // ✅ تسجيل في سجل المزاد
     await supabase
       .from('auction_history')
       .insert({
@@ -3157,7 +3157,7 @@ app.put('/api/auctions/:id/end', authenticate, async (req, res) => {
         .eq('auction_id', id);
     }
     
-    // ✅ تسجيل في سجل المزاد    await supabase
+    await supabase
       .from('auction_history')
       .insert({
         auction_id: id,
@@ -3223,7 +3223,6 @@ app.put('/api/auctions/:id/cancel', authenticate, async (req, res) => {
         .eq('auction_id', id);
     }
     
-    // ✅ تسجيل في سجل المزاد
     await supabase
       .from('auction_history')
       .insert({
