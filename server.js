@@ -834,7 +834,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// ✅ تسجيل الدخول (مُصلح لدعم UUID)
+// ✅ تسجيل الدخول - النسخة النهائية المُصلحة
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -874,104 +874,107 @@ app.post('/api/auth/login', async (req, res) => {
     
     console.log(`✅ تم المصادقة: ${authData.user.id}`);
     
-    // ✅ 2. البحث عن المستخدم في جدول public.users (id من نوع UUID)
-    const { data: existingUser, error: findError } = await supabase
+    // ✅ 2. البحث عن المستخدم في جدول public.users (باستخدام البريد الإلكتروني أولاً)
+    let userData = null;
+    
+    // محاولة البحث باستخدام البريد الإلكتروني
+    const { data: userByEmail, error: emailError } = await supabase
       .from('users')
       .select('*')
-      .eq('id', authData.user.id)  // ✅ UUID مباشرة
+      .eq('email', sanitizedEmail)
       .maybeSingle();
     
-    let userData = existingUser;
+    if (userByEmail) {
+      userData = userByEmail;
+      console.log(`✅ تم العثور على المستخدم بالبريد: ${userData.id}`);
+    } else {
+      // إذا لم يوجد بالبريد، حاول البحث باستخدام id من Auth
+      const { data: userById, error: idError } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+      
+      if (userById) {
+        userData = userById;
+        console.log(`✅ تم العثور على المستخدم بالـ id: ${userData.id}`);
+      }
+    }
     
     // ✅ 3. إذا لم يوجد المستخدم، قم بإنشائه
     if (!userData) {
-      console.log(`📝 إنشاء مستخدم جديد في جدول users: ${sanitizedEmail}`);
+      console.log(`📝 إنشاء مستخدم جديد: ${sanitizedEmail}`);
       
       const userEmail = authData.user.email || sanitizedEmail;
       const userName = authData.user.user_metadata?.name || userEmail.split('@')[0];
       const businessName = authData.user.user_metadata?.business_name || '';
       const deviceId = authData.user.user_metadata?.device_id || '';
       
-      // ✅ إنشاء المستخدم مع id من نوع UUID
-      try {
-        const { data: newUser, error: createError } = await supabase
-          .from('users')
-          .insert({
-            id: authData.user.id,  // ✅ UUID مباشرة
-            email: userEmail,
-            name: userName,
-            business_name: businessName || '',
-            phone: authData.user.phone || '',
-            device_id: deviceId || '',
-            is_verified: authData.user.email_confirmed_at != null || false,
-            free_posts_remaining: 1,
-            notifications_remaining: 0,
-            role: 'user',
-            user_type_id: 1,
-            specializations: [],
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString()
-          })
-          .select()
-          .single();
-        
-        if (createError) {
-          console.error('❌ تفاصيل خطأ إنشاء المستخدم:', createError);
-          
-          // ✅ محاولة إنشاء المستخدم بدون الحقول الإضافية
-          console.log('🔄 محاولة إنشاء مستخدم بدون الحقول الإضافية...');
-          
-          const { data: simpleUser, error: simpleError } = await supabase
-            .from('users')
-            .insert({
-              id: authData.user.id,  // ✅ UUID مباشرة
-              email: userEmail,
-              name: userName,
-              business_name: businessName || '',
-              phone: authData.user.phone || '',
-              is_verified: false,
-              free_posts_remaining: 1,
-              role: 'user',
-              created_at: new Date().toISOString()
-            })
-            .select()
-            .single();
-          
-          if (simpleError) {
-            console.error('❌ فشل إنشاء المستخدم حتى بالطريقة البسيطة:', simpleError);
-            return res.status(500).json({
-              success: false,
-              message: '❌ فشل إنشاء بيانات المستخدم',
-              error: simpleError.message
-            });
-          }
-          
-          userData = simpleUser;
-        } else {
-          userData = newUser;
-        }
-        
-        console.log(`✅ تم إنشاء المستخدم بنجاح: ${userData.id}`);
-        
-      } catch (insertError) {
-        console.error('❌ خطأ في إدراج المستخدم:', insertError);
+      const { data: newUser, error: createError } = await supabase
+        .from('users')
+        .insert({
+          id: authData.user.id,
+          email: userEmail,
+          name: userName,
+          business_name: businessName || '',
+          phone: authData.user.phone || '',
+          device_id: deviceId || '',
+          is_verified: authData.user.email_confirmed_at != null || false,
+          free_posts_remaining: 1,
+          notifications_remaining: 0,
+          role: 'user',
+          user_type_id: 1,
+          specializations: [],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      
+      if (createError) {
+        console.error('❌ فشل إنشاء المستخدم:', createError);
         return res.status(500).json({
           success: false,
           message: '❌ فشل إنشاء بيانات المستخدم',
-          error: insertError.message
+          error: createError.message
         });
       }
+      
+      userData = newUser;
+      console.log(`✅ تم إنشاء المستخدم بنجاح: ${userData.id}`);
     }
     
-    // ✅ 4. تحديث آخر تسجيل دخول
-    if (userData) {
+    // ✅ 4. تحديث آخر تسجيل دخول وربط id من Auth إذا كان مختلفاً
+    if (userData.id !== authData.user.id) {
+      // إذا كان id مختلفاً، قم بتحديث id ليتطابق مع Auth
+      await supabase
+        .from('users')
+        .update({ 
+          id: authData.user.id,
+          last_login_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .eq('email', sanitizedEmail);
+      
+      // جلب البيانات المحدثة
+      const { data: updatedUser } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authData.user.id)
+        .maybeSingle();
+      
+      if (updatedUser) {
+        userData = updatedUser;
+      }
+    } else {
+      // تحديث آخر تسجيل دخول فقط
       await supabase
         .from('users')
         .update({ 
           last_login_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
-        .eq('id', authData.user.id);
+        .eq('id', userData.id);
     }
     
     // ✅ 5. إنشاء التوكن
