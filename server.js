@@ -1,5 +1,5 @@
 // ============================================
-// 🚀 خادم تطبيق السوق - نسخة كاملة مع دعم UUID
+// 🚀 خادم تطبيق السوق - النسخة النهائية الكاملة
 // ============================================
 
 const express = require('express');
@@ -1084,17 +1084,16 @@ app.get('/api/auth/verify-token', authenticate, (req, res) => {
 // 🔐 2.1 نقاط نهاية المصادقة - الإضافات الجديدة
 // ============================================
 
-// ✅ التحقق من الجهاز المسجل
+// ✅ التحقق من الجهاز المسجل (باستخدام جدول devices)
 app.post('/api/auth/check-device', authenticate, async (req, res) => {
   try {
     const { userId, deviceId } = req.body;
     
     const { data: device, error } = await supabase
-      .from('user_devices')
+      .from('devices')
       .select('*')
       .eq('user_id', userId)
       .eq('device_id', deviceId)
-      .eq('is_active', true)
       .maybeSingle();
     
     if (error) {
@@ -1119,16 +1118,15 @@ app.post('/api/auth/check-device', authenticate, async (req, res) => {
   }
 });
 
-// ✅ تسجيل جهاز جديد
+// ✅ تسجيل جهاز جديد (باستخدام جدول devices)
 app.post('/api/auth/register-device', authenticate, async (req, res) => {
   try {
     const { userId, deviceId, deviceName } = req.body;
     
     const { data: existingDevices, error: checkError } = await supabase
-      .from('user_devices')
+      .from('devices')
       .select('device_id')
-      .eq('user_id', userId)
-      .eq('is_active', true);
+      .eq('user_id', userId);
     
     if (checkError) {
       return res.status(500).json({
@@ -1149,13 +1147,12 @@ app.post('/api/auth/register-device', authenticate, async (req, res) => {
     }
     
     const { data: device, error } = await supabase
-      .from('user_devices')
+      .from('devices')
       .upsert({
         user_id: userId,
         device_id: deviceId,
         device_name: deviceName || 'Unknown Device',
-        is_active: true,
-        last_used_at: new Date().toISOString(),
+        last_seen: new Date().toISOString(),
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
@@ -1190,11 +1187,8 @@ app.delete('/api/auth/device/:deviceId', authenticate, isAdmin, async (req, res)
     const { deviceId } = req.params;
     
     const { error } = await supabase
-      .from('user_devices')
-      .update({
-        is_active: false,
-        revoked_at: new Date().toISOString(),
-      })
+      .from('devices')
+      .delete()
       .eq('device_id', deviceId);
     
     if (error) {
@@ -1344,10 +1338,10 @@ app.get('/api/auth/devices/:userId', authenticate, async (req, res) => {
     }
     
     const { data: devices, error } = await supabase
-      .from('user_devices')
+      .from('devices')
       .select('*')
       .eq('user_id', userId)
-      .order('last_used_at', { ascending: false });
+      .order('last_seen', { ascending: false });
     
     if (error) {
       return res.status(500).json({
@@ -1492,6 +1486,25 @@ app.get('/api/payments/payment-methods/version', async (req, res) => {
       data: { version: version }
     });
     
+  } catch (error) {
+    res.json({ success: true, data: { version: Date.now() } });
+  }
+});
+
+// ✅ جلب إصدار المنتجات (للكاش) - مُضاف
+app.get('/api/products/version', async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from('products')
+      .select('updated_at')
+      .order('updated_at', { ascending: false })
+      .limit(1);
+    
+    const version = data && data.length > 0 
+      ? new Date(data[0].updated_at).getTime() 
+      : Date.now();
+    
+    res.json({ success: true, data: { version } });
   } catch (error) {
     res.json({ success: true, data: { version: Date.now() } });
   }
@@ -2774,7 +2787,7 @@ app.get('/api/auctions', async (req, res) => {
       .select(`
         *,
         product:products(*),
-        seller:users!fk_auctions_seller(id, name, business_name, phone),
+        seller:users!auctions_seller_id_fkey(id, name, business_name, phone),
         bids:bids(*)
       `)
       .order('created_at', { ascending: false })
@@ -2827,7 +2840,7 @@ app.get('/api/auctions/active', async (req, res) => {
       .select(`
         *,
         product:products(*),
-        seller:users!fk_auctions_seller(id, name, business_name, phone),
+        seller:users!auctions_seller_id_fkey(id, name, business_name, phone),
         bids:bids(*)
       `)
       .eq('status', 'active')
@@ -2871,7 +2884,7 @@ app.get('/api/auctions/:id', async (req, res) => {
       .select(`
         *,
         product:products(*),
-        seller:users!fk_auctions_seller(id, name, business_name, phone),
+        seller:users!auctions_seller_id_fkey(id, name, business_name, phone),
         bids:bids(*)
       `)
       .eq('id', id)
@@ -3717,7 +3730,7 @@ app.get('/api/admin/auctions', authenticate, isAdmin, async (req, res) => {
       .select(`
         *,
         product:products(*),
-        seller:users!fk_auctions_seller(id, name, business_name),
+        seller:users!auctions_seller_id_fkey(id, name, business_name),
         bids:bids(*)
       `)
       .order('created_at', { ascending: false })
@@ -3744,6 +3757,35 @@ app.get('/api/admin/auctions', authenticate, isAdmin, async (req, res) => {
     
   } catch (error) {
     console.error('❌ خطأ في جلب المزادات للمدير:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: '❌ حدث خطأ في الخادم' 
+    });
+  }
+});
+
+// ✅ جلب قصص النجاح (مع إصلاح العلاقة)
+app.get('/api/success-stories', async (req, res) => {
+  try {
+    const { data: stories, error } = await supabase
+      .from('success_stories')
+      .select('*')
+      .order('created_at', { ascending: false });
+    
+    if (error) {
+      return res.status(500).json({ 
+        success: false, 
+        message: '❌ فشل جلب قصص النجاح' 
+      });
+    }
+    
+    res.json({
+      success: true,
+      stories: stories || []
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في جلب قصص النجاح:', error);
     res.status(500).json({ 
       success: false, 
       message: '❌ حدث خطأ في الخادم' 
