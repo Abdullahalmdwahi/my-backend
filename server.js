@@ -15,7 +15,7 @@ require('dotenv').config();
 // ============================================
 // 📦 استيراد الميدلوير المحلية
 // ============================================
-const { authenticate, isAdmin, generateToken } = require('./middleware/auth');
+const { authenticate, isAdmin, generateToken, verifyToken } = require('./middleware/auth');
 const { limiter, strictLimiter, passwordResetLimiter, registerLimiter } = require('./middleware/rateLimit');
 const { sanitizeInput, sanitizeBody, securityHeaders } = require('./middleware/security');
 
@@ -874,10 +874,10 @@ app.post('/api/auth/login', async (req, res) => {
     
     console.log(`✅ تم المصادقة: ${authData.user.id}`);
     
-    // ✅ 2. البحث عن المستخدم في جدول public.users (باستخدام البريد الإلكتروني أولاً)
+    // ✅ 2. البحث عن المستخدم في جدول public.users
     let userData = null;
     
-    // محاولة البحث باستخدام البريد الإلكتروني
+    // محاولة البحث باستخدام البريد الإلكتروني أولاً
     const { data: userByEmail, error: emailError } = await supabase
       .from('users')
       .select('*')
@@ -910,6 +910,12 @@ app.post('/api/auth/login', async (req, res) => {
       const businessName = authData.user.user_metadata?.business_name || '';
       const deviceId = authData.user.user_metadata?.device_id || '';
       
+      // ✅ تحويل userTypeId إلى رقم
+      let userTypeId = 1;
+      if (authData.user.user_metadata?.user_type_id) {
+        userTypeId = parseInt(authData.user.user_metadata?.user_type_id) || 1;
+      }
+      
       const { data: newUser, error: createError } = await supabase
         .from('users')
         .insert({
@@ -923,8 +929,8 @@ app.post('/api/auth/login', async (req, res) => {
           free_posts_remaining: 1,
           notifications_remaining: 0,
           role: 'user',
-          user_type_id: 1,
-          specializations: [],
+          user_type_id: userTypeId,
+          specializations: authData.user.user_metadata?.specializations || [],
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         })
@@ -944,38 +950,14 @@ app.post('/api/auth/login', async (req, res) => {
       console.log(`✅ تم إنشاء المستخدم بنجاح: ${userData.id}`);
     }
     
-    // ✅ 4. تحديث آخر تسجيل دخول وربط id من Auth إذا كان مختلفاً
-    if (userData.id !== authData.user.id) {
-      // إذا كان id مختلفاً، قم بتحديث id ليتطابق مع Auth
-      await supabase
-        .from('users')
-        .update({ 
-          id: authData.user.id,
-          last_login_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('email', sanitizedEmail);
-      
-      // جلب البيانات المحدثة
-      const { data: updatedUser } = await supabase
-        .from('users')
-        .select('*')
-        .eq('id', authData.user.id)
-        .maybeSingle();
-      
-      if (updatedUser) {
-        userData = updatedUser;
-      }
-    } else {
-      // تحديث آخر تسجيل دخول فقط
-      await supabase
-        .from('users')
-        .update({ 
-          last_login_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', userData.id);
-    }
+    // ✅ 4. تحديث آخر تسجيل دخول
+    await supabase
+      .from('users')
+      .update({ 
+        last_login_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', userData.id);
     
     // ✅ 5. إنشاء التوكن
     const token = generateToken(
@@ -984,18 +966,18 @@ app.post('/api/auth/login', async (req, res) => {
       userData.role || 'user'
     );
     
-    // ✅ 6. إرجاع النتيجة
+    // ✅ 6. إرجاع النتيجة مع التوكن في مكان واضح
     res.json({
       success: true,
       message: '✅ تم تسجيل الدخول بنجاح',
       data: {
         user: userData,
+        token: token,  // ✅ التوكن في مكان واضح
         session: {
-          access_token: authData.session?.access_token || '',
+          access_token: token,  // ✅ أيضاً في session
           refresh_token: authData.session?.refresh_token || '',
           expires_at: authData.session?.expires_at || 0
-        },
-        token: token
+        }
       }
     });
     
@@ -1072,12 +1054,57 @@ app.post('/api/auth/reset-password', async (req, res) => {
   }
 });
 
-// ✅ التحقق من صحة التوكن
+// ✅ التحقق من صحة التوكن - نسخة محسنة مع بيانات المستخدم
 app.get('/api/auth/verify-token', authenticate, (req, res) => {
   res.json({
     success: true,
-    message: '✅ التوكن صالح'
+    message: '✅ التوكن صالح',
+    user: req.user
   });
+});
+
+// ✅ تجديد التوكن (Refresh Token)
+app.post('/api/auth/refresh-token', async (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+    
+    if (!refreshToken) {
+      return res.status(400).json({
+        success: false,
+        message: '❌ Refresh token مطلوب'
+      });
+    }
+    
+    // ✅ التحقق من صحة الـ refresh token
+    const result = verifyToken(refreshToken);
+    
+    if (!result.valid) {
+      return res.status(401).json({
+        success: false,
+        message: '❌ Refresh token غير صالح'
+      });
+    }
+    
+    // ✅ إنشاء توكن جديد
+    const newToken = generateToken(result.user.id, result.user.email, result.user.role);
+    
+    res.json({
+      success: true,
+      data: {
+        accessToken: newToken,
+        userId: result.user.id,
+        userEmail: result.user.email,
+        userRole: result.user.role
+      }
+    });
+    
+  } catch (error) {
+    console.error('❌ خطأ في تجديد التوكن:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في الخادم'
+    });
+  }
 });
 
 // ============================================

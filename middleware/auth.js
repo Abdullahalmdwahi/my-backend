@@ -27,6 +27,24 @@ function generateToken(userId, email, role = 'user') {
   );
 }
 
+// ✅ التحقق من صحة التوكن وإرجاع بيانات المستخدم
+function verifyToken(token) {
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    return { valid: true, user: decoded };
+  } catch (error) {
+    if (error.name === 'TokenExpiredError') {
+      // ✅ محاولة تجديد التوكن إذا كان منتهياً
+      const decoded = jwt.decode(token);
+      if (decoded) {
+        const newToken = generateToken(decoded.id, decoded.email, decoded.role);
+        return { valid: true, user: decoded, newToken: newToken, refreshed: true };
+      }
+    }
+    return { valid: false, error: error.message };
+  }
+}
+
 // ✅ التحقق من JWT Token مع تجديد تلقائي
 function verifyAndRefreshToken(token) {
   try {
@@ -176,6 +194,7 @@ function isSuperAdmin(req, res, next) {
 
 module.exports = {
   generateToken,
+  verifyToken,
   verifyAndRefreshToken,
   authenticate,
   isAdmin,

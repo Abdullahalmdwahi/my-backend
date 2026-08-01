@@ -15,7 +15,10 @@ const supabase = createClient(supabaseUrl, supabaseKey);
 // ✅ إنشاء عميل Supabase (Service Role - للعمليات الإدارية)
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey || supabaseKey);
 
-// ✅ دوال مساعدة
+// ============================================
+// 📊 دوال عامة
+// ============================================
+
 async function fetchData(table, filters = {}, options = {}) {
   try {
     let query = supabase.from(table).select(options.select || '*');
@@ -88,7 +91,111 @@ async function deleteData(table, id, idField = 'id') {
   }
 }
 
-// ✅ دوال خاصة بالمزادات
+// ============================================
+// 👤 دوال خاصة بالمستخدمين
+// ============================================
+
+async function getUserByEmail(email) {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .maybeSingle();
+    
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    console.error(`❌ فشل جلب المستخدم ${email}:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+async function getUserById(id) {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    console.error(`❌ فشل جلب المستخدم ${id}:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+async function updateUser(id, userData) {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .update(userData)
+      .eq('id', id)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    console.error(`❌ فشل تحديث المستخدم ${id}:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+async function deleteUser(id) {
+  try {
+    const { error } = await supabase
+      .from('users')
+      .delete()
+      .eq('id', id);
+    
+    if (error) throw error;
+    return { success: true };
+  } catch (error) {
+    console.error(`❌ فشل حذف المستخدم ${id}:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+async function getUserSpecializations(userId) {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('specializations')
+      .eq('id', userId)
+      .maybeSingle();
+    
+    if (error) throw error;
+    return { success: true, data: data?.specializations || [] };
+  } catch (error) {
+    console.error(`❌ فشل جلب تخصصات المستخدم ${userId}:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+async function updateUserSpecializations(userId, specializations) {
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .update({ specializations })
+      .eq('id', userId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    console.error(`❌ فشل تحديث تخصصات المستخدم ${userId}:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+// ============================================
+// 🏆 دوال خاصة بالمزادات
+// ============================================
+
 async function getAuctionsWithDetails(filters = {}, options = {}) {
   try {
     let query = supabase
@@ -122,7 +229,6 @@ async function getAuctionsWithDetails(filters = {}, options = {}) {
   }
 }
 
-// ✅ دوال خاصة بالمزادات - الحصول على المزادات النشطة
 async function getActiveAuctions(filters = {}) {
   try {
     let query = supabase
@@ -158,7 +264,6 @@ async function getActiveAuctions(filters = {}) {
   }
 }
 
-// ✅ دوال خاصة بالمزادات - الحصول على مزاد بواسطة ID
 async function getAuctionById(id) {
   try {
     const { data, error } = await supabase
@@ -180,7 +285,6 @@ async function getAuctionById(id) {
   }
 }
 
-// ✅ دوال خاصة بالمزادات - إنشاء عرض
 async function createBid(auctionId, userId, amount, quantity = 1) {
   try {
     // ✅ التحقق من المزاد
@@ -236,7 +340,6 @@ async function createBid(auctionId, userId, amount, quantity = 1) {
   }
 }
 
-// ✅ دوال خاصة بالمزادات - إنهاء المزاد
 async function endAuction(auctionId, userId) {
   try {
     const { data: auction, error: auctionError } = await supabase
@@ -277,6 +380,66 @@ async function endAuction(auctionId, userId) {
   }
 }
 
+// ============================================
+// 🔐 دوال خاصة بالأجهزة
+// ============================================
+
+async function registerDevice(userId, deviceId, deviceName) {
+  try {
+    const { data, error } = await supabase
+      .from('devices')
+      .upsert({
+        user_id: userId,
+        device_id: deviceId,
+        device_name: deviceName || 'Unknown Device',
+        last_seen: new Date().toISOString(),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    console.error(`❌ فشل تسجيل الجهاز:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+async function getUserDevices(userId) {
+  try {
+    const { data, error } = await supabase
+      .from('devices')
+      .select('*')
+      .eq('user_id', userId)
+      .order('last_seen', { ascending: false });
+    
+    if (error) throw error;
+    return { success: true, data: data || [] };
+  } catch (error) {
+    console.error(`❌ فشل جلب أجهزة المستخدم:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+async function checkDevice(userId, deviceId) {
+  try {
+    const { data, error } = await supabase
+      .from('devices')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('device_id', deviceId)
+      .maybeSingle();
+    
+    if (error) throw error;
+    return { success: true, isRegistered: data != null, device: data };
+  } catch (error) {
+    console.error(`❌ فشل التحقق من الجهاز:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
 module.exports = {
   supabase,
   supabaseAdmin,
@@ -284,9 +447,18 @@ module.exports = {
   insertData,
   updateData,
   deleteData,
+  getUserByEmail,
+  getUserById,
+  updateUser,
+  deleteUser,
+  getUserSpecializations,
+  updateUserSpecializations,
   getAuctionsWithDetails,
   getActiveAuctions,
   getAuctionById,
   createBid,
-  endAuction
+  endAuction,
+  registerDevice,
+  getUserDevices,
+  checkDevice
 };
