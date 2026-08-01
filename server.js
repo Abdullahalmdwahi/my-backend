@@ -843,79 +843,130 @@ app.post('/api/auth/login', async (req, res) => {
     const sanitizedPassword = sanitizeInput(password);
     
     if (!sanitizedEmail || !sanitizedPassword) {
-      return res.status(400).json({ 
-        success: false, 
-        message: '❌ البريد الإلكتروني وكلمة المرور مطلوبة' 
+      return res.status(400).json({
+        success: false,
+        message: '❌ البريد الإلكتروني وكلمة المرور مطلوبة'
       });
     }
     
+    // ✅ 1. تسجيل الدخول في Supabase Auth
     const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
       email: sanitizedEmail,
       password: sanitizedPassword
     });
     
     if (authError) {
-      if (authError.message.includes('Invalid login credentials')) {
-        return res.status(401).json({ 
-          success: false, 
-          message: '❌ البريد الإلكتروني أو كلمة المرور غير صحيحة' 
-        });
-      }
-      if (authError.message.includes('Email not confirmed')) {
-        return res.status(403).json({ 
-          success: false, 
-          message: '❌ البريد الإلكتروني غير مفعل، تأكد من بريدك' 
-        });
-      }
-      return res.status(400).json({ 
-        success: false, 
-        message: '❌ فشل تسجيل الدخول' 
+      console.error('❌ خطأ في المصادقة:', authError.message);
+      return res.status(401).json({
+        success: false,
+        message: '❌ البريد الإلكتروني أو كلمة المرور غير صحيحة'
       });
     }
     
-    const { data: userData, error: userError } = await supabase
+    if (!authData || !authData.user) {
+      return res.status(401).json({
+        success: false,
+        message: '❌ فشل تسجيل الدخول'
+      });
+    }
+    
+    // ✅ 2. البحث عن المستخدم في جدول public.users
+    let userData;
+    let userError;
+    
+    // محاولة البحث باستخدام id من auth
+    const result = await supabase
       .from('users')
       .select('*')
       .eq('id', authData.user.id)
       .maybeSingle();
     
+    userData = result.data;
+    userError = result.error;
+    
+    // ✅ 3. إذا لم يوجد المستخدم، قم بإنشائه تلقائياً
     if (userError || !userData) {
-      return res.status(404).json({ 
-        success: false, 
-        message: '❌ لم يتم العثور على بيانات المستخدم' 
-      });
+      console.log(`📝 إنشاء مستخدم جديد في جدول users: ${sanitizedEmail}`);
+      
+      // الحصول على بيانات المستخدم من auth
+      const userEmail = authData.user.email || sanitizedEmail;
+      const userName = authData.user.user_metadata?.name || userEmail.split('@')[0];
+      const businessName = authData.user.user_metadata?.business_name || '';
+      const deviceId = authData.user.user_metadata?.device_id || '';
+      
+      // ✅ إنشاء المستخدم في public.users
+      const { data: newUser, error: createError } = await supabase
+        .from('users')
+        .insert({
+          id: authData.user.id,
+          email: userEmail,
+          name: userName,
+          business_name: businessName,
+          phone: authData.user.phone || '',
+          device_id: deviceId,
+          is_verified: authData.user.email_confirmed_at != null || false,
+          free_posts_remaining: 1,
+          notifications_remaining: 0,
+          role: 'user',
+          user_type_id: '1',
+          specializations: [],
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+      
+      if (createError) {
+        console.error('❌ فشل إنشاء المستخدم:', createError);
+        return res.status(500).json({
+          success: false,
+          message: '❌ فشل إنشاء بيانات المستخدم'
+        });
+      }
+      
+      userData = newUser;
+      console.log(`✅ تم إنشاء المستخدم بنجاح: ${userData.id}`);
     }
     
+    // ✅ 4. تحديث آخر تسجيل دخول
     await supabase
       .from('users')
-      .update({ last_login_at: new Date().toISOString() })
+      .update({ 
+        last_login_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
       .eq('id', authData.user.id);
     
+    // ✅ 5. إنشاء التوكن
     const token = generateToken(
-      userData.id, 
-      userData.email, 
+      userData.id,
+      userData.email,
       userData.role || 'user'
     );
     
+    // ✅ 6. إرجاع النتيجة
     res.json({
       success: true,
       message: '✅ تم تسجيل الدخول بنجاح',
       data: {
         user: userData,
-        session: authData.session,
+        session: {
+          access_token: authData.session?.access_token || '',
+          refresh_token: authData.session?.refresh_token || '',
+          expires_at: authData.session?.expires_at || 0
+        },
         token: token
       }
     });
     
   } catch (error) {
     console.error('❌ خطأ في تسجيل الدخول:', error);
-    res.status(500).json({ 
-      success: false, 
-      message: '❌ حدث خطأ في الخادم' 
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ في الخادم'
     });
   }
 });
-
 // ✅ تسجيل الخروج
 app.post('/api/auth/logout', authenticate, async (req, res) => {
   try {
