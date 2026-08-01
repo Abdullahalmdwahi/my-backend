@@ -1,5 +1,5 @@
 // ============================================
-// 🚀 خادم تطبيق السوق - نسخة كاملة مع رفع الصور والمزادات والأمان المتكامل
+// 🚀 خادم تطبيق السوق - نسخة كاملة مع دعم UUID
 // ============================================
 
 const express = require('express');
@@ -834,7 +834,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
 });
 
-// ✅ تسجيل الدخول
+// ✅ تسجيل الدخول (مُصلح لدعم UUID)
 app.post('/api/auth/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -874,11 +874,11 @@ app.post('/api/auth/login', async (req, res) => {
     
     console.log(`✅ تم المصادقة: ${authData.user.id}`);
     
-    // ✅ 2. البحث عن المستخدم في جدول public.users
+    // ✅ 2. البحث عن المستخدم في جدول public.users (id من نوع UUID)
     const { data: existingUser, error: findError } = await supabase
       .from('users')
       .select('*')
-      .eq('id', authData.user.id)
+      .eq('id', authData.user.id)  // ✅ UUID مباشرة
       .maybeSingle();
     
     let userData = existingUser;
@@ -892,17 +892,17 @@ app.post('/api/auth/login', async (req, res) => {
       const businessName = authData.user.user_metadata?.business_name || '';
       const deviceId = authData.user.user_metadata?.device_id || '';
       
-      // ✅ إنشاء المستخدم مع معالجة الأخطاء
+      // ✅ إنشاء المستخدم مع id من نوع UUID
       try {
         const { data: newUser, error: createError } = await supabase
           .from('users')
           .insert({
-            id: authData.user.id,
+            id: authData.user.id,  // ✅ UUID مباشرة
             email: userEmail,
             name: userName,
-            business_name: businessName,
+            business_name: businessName || '',
             phone: authData.user.phone || '',
-            device_id: deviceId,
+            device_id: deviceId || '',
             is_verified: authData.user.email_confirmed_at != null || false,
             free_posts_remaining: 1,
             notifications_remaining: 0,
@@ -924,7 +924,7 @@ app.post('/api/auth/login', async (req, res) => {
           const { data: simpleUser, error: simpleError } = await supabase
             .from('users')
             .insert({
-              id: authData.user.id,
+              id: authData.user.id,  // ✅ UUID مباشرة
               email: userEmail,
               name: userName,
               business_name: businessName || '',
@@ -1005,6 +1005,7 @@ app.post('/api/auth/login', async (req, res) => {
     });
   }
 });
+
 // ✅ تسجيل الخروج
 app.post('/api/auth/logout', authenticate, async (req, res) => {
   try {
