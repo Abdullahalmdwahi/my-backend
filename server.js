@@ -910,7 +910,6 @@ app.post('/api/auth/login', async (req, res) => {
       const businessName = authData.user.user_metadata?.business_name || '';
       const deviceId = authData.user.user_metadata?.device_id || '';
       
-      // ✅ تحويل userTypeId إلى رقم
       let userTypeId = 1;
       if (authData.user.user_metadata?.user_type_id) {
         userTypeId = parseInt(authData.user.user_metadata?.user_type_id) || 1;
@@ -966,15 +965,28 @@ app.post('/api/auth/login', async (req, res) => {
       userData.role || 'user'
     );
     
-    // ✅ 6. إرجاع النتيجة مع التوكن في مكان واضح
+    // ✅ 6. ✅ ✅ ✅ إرجاع النتيجة مع id في user (هذا هو الإصلاح)
     res.json({
       success: true,
       message: '✅ تم تسجيل الدخول بنجاح',
       data: {
-        user: userData,
-        token: token,  // ✅ التوكن في مكان واضح
+        user: {
+          id: userData.id,  // ✅ ✅ ✅ تأكد من إرسال id هنا
+          email: userData.email,
+          name: userData.name,
+          business_name: userData.business_name,
+          phone: userData.phone,
+          role: userData.role,
+          is_verified: userData.is_verified,
+          free_posts_remaining: userData.free_posts_remaining,
+          notifications_remaining: userData.notifications_remaining,
+          created_at: userData.created_at,
+          last_login_at: userData.last_login_at,
+          // ... باقي الحقول
+        },
+        token: token,
         session: {
-          access_token: token,  // ✅ أيضاً في session
+          access_token: token,
           refresh_token: authData.session?.refresh_token || '',
           expires_at: authData.session?.expires_at || 0
         }
@@ -990,6 +1002,7 @@ app.post('/api/auth/login', async (req, res) => {
     });
   }
 });
+
 
 // ✅ تسجيل الخروج
 app.post('/api/auth/logout', authenticate, async (req, res) => {
