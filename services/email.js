@@ -17,20 +17,32 @@ class EmailService {
   // INITIALIZE GMAIL SMTP
   // ============================================
   initializeTransporter() {
-    this.transporter = nodemailer.createTransporter({
-      host: process.env.GMAIL_SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.GMAIL_SMTP_PORT || '587'),
-      secure: false,
-      auth: {
-        user: process.env.GMAIL_EMAIL,
-        pass: process.env.GMAIL_APP_PASSWORD,
-      },
-      tls: {
-        rejectUnauthorized: false,
-      },
-    });
+    try {
+      // التحقق من وجود nodemailer بشكل صحيح
+      if (!nodemailer || typeof nodemailer.createTransport !== 'function') {
+        console.warn('⚠️ nodemailer.createTransport غير متوفر، سيتم استخدام وضع المحاكاة');
+        this.transporter = null;
+        return;
+      }
 
-    console.log('✅ Email Service initialized with Gmail');
+      this.transporter = nodemailer.createTransport({
+        host: process.env.GMAIL_SMTP_HOST || 'smtp.gmail.com',
+        port: parseInt(process.env.GMAIL_SMTP_PORT || '587'),
+        secure: false,
+        auth: {
+          user: process.env.GMAIL_EMAIL,
+          pass: process.env.GMAIL_APP_PASSWORD,
+        },
+        tls: {
+          rejectUnauthorized: false,
+        },
+      });
+
+      console.log('✅ Email Service initialized with Gmail');
+    } catch (error) {
+      console.error('❌ فشل تهيئة خدمة البريد:', error.message);
+      this.transporter = null;
+    }
   }
 
   // ============================================
@@ -42,6 +54,18 @@ class EmailService {
     html,
     text,
   }) {
+    // إذا لم يكن هناك ناقل بريد، استخدم المحاكاة
+    if (!this.transporter) {
+      console.log(`📧 [محاكاة] إرسال بريد إلى: ${to}`);
+      console.log(`📝 الموضوع: ${subject}`);
+      console.log(`📄 المحتوى: ${html ? 'HTML' : text || 'نص'}`);
+      return { 
+        success: true, 
+        messageId: `mock-${Date.now()}`,
+        simulated: true
+      };
+    }
+
     try {
       const mailOptions = {
         from: `"Sell In" <${process.env.GMAIL_EMAIL}>`,
