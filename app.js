@@ -7,7 +7,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const bodyParser = require('body-parser');
-const morgan = require('morgan');
+// const morgan = require('morgan'); // تم إزالة morgan
 const path = require('path');
 
 const { errorHandler } = require('./middleware/errorHandler');
@@ -42,12 +42,27 @@ app.use(compression());
 app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
-// Logging
-if (process.env.NODE_ENV !== 'production') {
-  app.use(morgan('dev'));
-} else {
-  app.use(morgan('combined'));
-}
+// ============================================
+// 📝 LOGGING - مخصص بدلاً من morgan
+// ============================================
+
+// تسجيل مخصص للطلبات (بديل عن morgan)
+app.use((req, res, next) => {
+  const start = Date.now();
+  
+  // تسجيل الطلب الوارد
+  console.log(`📝 [${new Date().toISOString()}] ${req.method} ${req.url} - ${req.ip || req.connection?.remoteAddress}`);
+  
+  // تسجيل الرد عند الانتهاء
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    const status = res.statusCode;
+    const statusEmoji = status >= 400 ? '❌' : status >= 300 ? '⚠️' : '✅';
+    console.log(`${statusEmoji} [${new Date().toISOString()}] ${req.method} ${req.url} - ${status} - ${duration}ms`);
+  });
+  
+  next();
+});
 
 // Rate Limiting
 app.use('/api', limiter);
