@@ -1,109 +1,171 @@
 // ============================================
-// 📧 خدمة إرسال الإيميلات عبر Brevo API
+// 📧 EMAIL SERVICE - معدل ✅
 // ============================================
 
-const axios = require('axios');
+const nodemailer = require('nodemailer');
+const dotenv = require('dotenv');
 
-const BREVO_API_KEY = process.env.BREVO_API_KEY;
-const BREVO_FROM_EMAIL = process.env.BREVO_FROM_EMAIL || 'iiuuyy2021@gmail.com';
-const BREVO_FROM_NAME = process.env.BREVO_FROM_NAME || 'Sell In';
+dotenv.config();
 
-// ✅ دالة إرسال إيميل مع إعادة المحاولة
-async function sendEmailWithRetry(to, subject, htmlContent, textContent, maxRetries = 3) {
-  let attempt = 0;
-  let lastError = null;
-  
-  while (attempt < maxRetries) {
+class EmailService {
+  constructor() {
+    this.transporter = null;
+    this.initializeTransporter();
+  }
+
+  // ============================================
+  // INITIALIZE GMAIL SMTP
+  // ============================================
+  initializeTransporter() {
+    this.transporter = nodemailer.createTransporter({
+      host: process.env.GMAIL_SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.GMAIL_SMTP_PORT || '587'),
+      secure: false,
+      auth: {
+        user: process.env.GMAIL_EMAIL,
+        pass: process.env.GMAIL_APP_PASSWORD,
+      },
+      tls: {
+        rejectUnauthorized: false,
+      },
+    });
+
+    console.log('✅ Email Service initialized with Gmail');
+  }
+
+  // ============================================
+  // SEND EMAIL
+  // ============================================
+  async sendEmail({
+    to,
+    subject,
+    html,
+    text,
+  }) {
     try {
-      console.log(`📧 [EmailService] محاولة ${attempt + 1}/${maxRetries} إلى: ${to}`);
-      
-      const data = {
-        sender: {
-          name: BREVO_FROM_NAME,
-          email: BREVO_FROM_EMAIL,
-        },
-        to: [{ email: to }],
+      const mailOptions = {
+        from: `"Sell In" <${process.env.GMAIL_EMAIL}>`,
+        to: to,
         subject: subject,
-        htmlContent: htmlContent,
-        textContent: textContent || htmlContent.replace(/<[^>]*>/g, ''),
+        html: html,
+        text: text || html.replace(/<[^>]*>/g, ''),
       };
 
-      const response = await axios.post(
-        'https://api.brevo.com/v3/smtp/email',
-        data,
-        {
-          headers: {
-            'Content-Type': 'application/json',
-            'api-key': BREVO_API_KEY,
-          },
-          timeout: 15000,
-        }
-      );
-
-      console.log(`✅ [EmailService] تم الإرسال بنجاح إلى: ${to}`);
-      return true;
-      
+      const info = await this.transporter.sendMail(mailOptions);
+      console.log(`✅ Email sent to ${to}: ${info.messageId}`);
+      return { success: true, messageId: info.messageId };
     } catch (error) {
-      attempt++;
-      lastError = error;
-      console.error(`❌ [EmailService] فشل الإرسال (محاولة ${attempt}/${maxRetries}):`, error.message);
-      
-      if (attempt < maxRetries) {
-        await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-      }
+      console.error(`❌ Failed to send email to ${to}:`, error.message);
+      return { success: false, error: error.message };
     }
   }
-  
-  console.error(`❌ [EmailService] فشل الإرسال بعد ${maxRetries} محاولات إلى: ${to}`);
-  return false;
-}
 
-// ✅ دالة إرسال إيميل (واجهة بسيطة)
-async function sendEmail(to, subject, htmlContent, textContent) {
-  return sendEmailWithRetry(to, subject, htmlContent, textContent);
-}
+  // ============================================
+  // SEND VERIFICATION EMAIL
+  // ============================================
+  async sendVerificationEmail(email, code) {
+    const subject = '🔐 رمز التحقق - Sell In';
+    const html = this.buildVerificationEmailHtml(code);
+    const text = this.buildVerificationEmailText(code);
 
-// ✅ قوالب الإيميلات - HTML
-function getVerificationEmailHtml(token) {
-  return `
+    return await this.sendEmail({
+      to: email,
+      subject,
+      html,
+      text,
+    });
+  }
+
+  // ============================================
+  // SEND PASSWORD RESET EMAIL
+  // ============================================
+  async sendPasswordResetEmail(email, token) {
+    const subject = '🔑 إعادة تعيين كلمة المرور - Sell In';
+    const html = this.buildPasswordResetEmailHtml(token);
+    const text = this.buildPasswordResetEmailText(token);
+
+    return await this.sendEmail({
+      to: email,
+      subject,
+      html,
+      text,
+    });
+  }
+
+  // ============================================
+  // SEND DEVICE VERIFICATION EMAIL
+  // ============================================
+  async sendDeviceVerificationEmail(email, code) {
+    const subject = '📱 تأكيد جهاز جديد - Sell In';
+    const html = this.buildDeviceVerificationEmailHtml(code);
+    const text = this.buildDeviceVerificationEmailText(code);
+
+    return await this.sendEmail({
+      to: email,
+      subject,
+      html,
+      text,
+    });
+  }
+
+  // ============================================
+  // SEND WELCOME EMAIL
+  // ============================================
+  async sendWelcomeEmail(email, userName) {
+    const subject = '🎉 مرحباً بك في Sell In!';
+    const html = this.buildWelcomeEmailHtml(userName);
+    const text = this.buildWelcomeEmailText(userName);
+
+    return await this.sendEmail({
+      to: email,
+      subject,
+      html,
+      text,
+    });
+  }
+
+  // ============================================
+  // HTML TEMPLATES
+  // ============================================
+  buildVerificationEmailHtml(code) {
+    return `
     <!DOCTYPE html>
     <html dir="rtl" lang="ar">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
-        .container { max-width: 600px; margin: 20px auto; padding: 0; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-        .header { background: linear-gradient(135deg, #7F1D1D, #991B1B); color: white; padding: 30px 20px; text-align: center; }
-        .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
-        .header p { margin: 5px 0 0; opacity: 0.9; font-size: 14px; }
-        .content { padding: 30px; }
-        .code-box { text-align: center; background: #f8f9fa; padding: 25px; border-radius: 16px; margin: 20px 0; border: 2px dashed #7F1D1D; }
-        .code { font-size: 42px; font-weight: bold; color: #7F1D1D; letter-spacing: 8px; font-family: 'Courier New', monospace; background: white; padding: 10px 20px; border-radius: 8px; display: inline-block; }
-        .footer { text-align: center; font-size: 12px; color: #999; padding: 20px; border-top: 1px solid #eee; background: #fafafa; }
-        .warning { background: #FFF3E0; padding: 15px; border-radius: 12px; margin: 20px 0; border-right: 4px solid #FF9800; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #7F1D1D, #991B1B); color: white; padding: 20px; border-radius: 16px 16px 0 0; text-align: center; margin: -30px -30px 0 -30px; }
+        .code-box { background: #f8f9fa; padding: 25px; border-radius: 12px; text-align: center; margin: 20px 0; border: 2px dashed #7F1D1D; }
+        .code { font-size: 42px; font-weight: bold; color: #7F1D1D; letter-spacing: 8px; font-family: monospace; }
+        .warning { background: #FFF3E0; padding: 15px; border-radius: 12px; border-right: 4px solid #FF9800; }
+        .footer { text-align: center; color: #999; font-size: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; }
       </style>
     </head>
     <body>
       <div class="container">
         <div class="header">
           <h1>🛡️ Sell In</h1>
-          <p>سوقك الإلكتروني الموثوق</p>
+          <p style="opacity: 0.9;">سوقك الإلكتروني الموثوق</p>
         </div>
         <div class="content">
-          <h2 style="color: #7F1D1D;">✅ مرحباً بك في Sell In!</h2>
-          <p>شكراً لانضمامك إلى سوقنا الإلكتروني. 🎉</p>
+          <h2 style="color: #7F1D1D;">✅ رمز التحقق الخاص بك</h2>
+          <p>مرحباً بك في <strong>Sell In</strong>! 🎉</p>
+          <p>للتحقق من هويتك، يرجى استخدام الرمز التالي:</p>
           <div class="code-box">
-            <p style="margin-bottom: 12px; color: #666; font-size: 14px;">🔑 رمز التفعيل الخاص بك هو:</p>
-            <div class="code">${token}</div>
-            <p style="margin-top: 12px; color: #666; font-size: 12px;">أدخل هذا الرمز في التطبيق لتفعيل حسابك</p>
+            <div class="code">${code}</div>
+            <p style="margin-top: 12px; color: #666; font-size: 12px;">
+              ⏰ هذا الرمز صالح لمدة <strong>10 دقائق</strong>
+            </p>
           </div>
           <div class="warning">
             <p style="margin: 0; color: #E65100; font-weight: bold;">⚠️ تنبيهات هامة:</p>
-            <ul style="margin: 10px 0 0; color: #E65100; font-size: 13px; padding-right: 20px;">
-              <li>هذا الرمز صالح لمدة <strong>24 ساعة</strong> فقط</li>
-              <li>إذا لم تقم بإنشاء هذا الحساب، يرجى تجاهل هذا البريد</li>
-              <li>لا تشارك هذا الرمز مع أي شخص آخر</li>
+            <ul style="margin: 10px 0 0; padding-right: 20px; font-size: 13px;">
+              <li>لا تشارك هذا الرمز مع أي شخص</li>
+              <li>إذا لم تقم بطلب هذا الرمز، يرجى تجاهل هذه الرسالة</li>
+              <li>لأي استفسار، تواصل مع الدعم الفني</li>
             </ul>
           </div>
         </div>
@@ -113,51 +175,68 @@ function getVerificationEmailHtml(token) {
       </div>
     </body>
     </html>
-  `;
-}
+    `;
+  }
 
-function getPasswordResetEmailHtml(token) {
-  return `
+  buildVerificationEmailText(code) {
+    return `
+    Sell In - رمز التحقق الخاص بك
+    ================================
+    
+    مرحباً بك في Sell In! 🎉
+    
+    رمز التحقق الخاص بك هو:
+    ${code}
+    
+    ⏰ هذا الرمز صالح لمدة 10 دقائق
+    
+    ⚠️ تنبيهات هامة:
+    - لا تشارك هذا الرمز مع أي شخص
+    - إذا لم تقم بطلب هذا الرمز، يرجى تجاهل هذه الرسالة
+    
+    © ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة
+    `;
+  }
+
+  buildPasswordResetEmailHtml(token) {
+    return `
     <!DOCTYPE html>
     <html dir="rtl" lang="ar">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
-        .container { max-width: 600px; margin: 20px auto; padding: 0; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-        .header { background: linear-gradient(135deg, #7F1D1D, #991B1B); color: white; padding: 30px 20px; text-align: center; }
-        .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
-        .header p { margin: 5px 0 0; opacity: 0.9; font-size: 14px; }
-        .content { padding: 30px; }
-        .code-box { text-align: center; background: #f8f9fa; padding: 25px; border-radius: 16px; margin: 20px 0; border: 2px dashed #7F1D1D; }
-        .code { font-size: 42px; font-weight: bold; color: #7F1D1D; letter-spacing: 8px; font-family: 'Courier New', monospace; background: white; padding: 10px 20px; border-radius: 8px; display: inline-block; }
-        .footer { text-align: center; font-size: 12px; color: #999; padding: 20px; border-top: 1px solid #eee; background: #fafafa; }
-        .warning { background: #FFF3E0; padding: 15px; border-radius: 12px; margin: 20px 0; border-right: 4px solid #FF9800; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #7F1D1D, #991B1B); color: white; padding: 20px; border-radius: 16px 16px 0 0; text-align: center; margin: -30px -30px 0 -30px; }
+        .code-box { background: #f8f9fa; padding: 25px; border-radius: 12px; text-align: center; margin: 20px 0; border: 2px dashed #7F1D1D; }
+        .code { font-size: 42px; font-weight: bold; color: #7F1D1D; letter-spacing: 8px; font-family: monospace; }
+        .warning { background: #FFF3E0; padding: 15px; border-radius: 12px; border-right: 4px solid #FF9800; }
+        .footer { text-align: center; color: #999; font-size: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; }
       </style>
     </head>
     <body>
       <div class="container">
         <div class="header">
           <h1>🛡️ Sell In</h1>
-          <p>سوقك الإلكتروني الموثوق</p>
+          <p style="opacity: 0.9;">سوقك الإلكتروني الموثوق</p>
         </div>
         <div class="content">
-          <h2 style="color: #7F1D1D;">🔐 إعادة تعيين كلمة المرور</h2>
+          <h2 style="color: #7F1D1D;">🔑 إعادة تعيين كلمة المرور</h2>
           <p>مرحباً،</p>
           <p>لقد تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك في <strong>Sell In</strong>.</p>
+          <p>استخدم الرمز التالي لإعادة تعيين كلمة المرور:</p>
           <div class="code-box">
-            <p style="margin-bottom: 12px; color: #666; font-size: 14px;">📱 رمز التحقق الخاص بك هو:</p>
             <div class="code">${token}</div>
-            <p style="margin-top: 12px; color: #666; font-size: 12px;">أدخل هذا الرمز في التطبيق لإعادة تعيين كلمة المرور</p>
+            <p style="margin-top: 12px; color: #666; font-size: 12px;">
+              ⏰ هذا الرمز صالح لمدة <strong>24 ساعة</strong>
+            </p>
           </div>
           <div class="warning">
-            <p style="margin: 0; color: #E65100; font-weight: bold;">⚠️ تنبيهات هامة:</p>
-            <ul style="margin: 10px 0 0; color: #E65100; font-size: 13px; padding-right: 20px;">
-              <li>هذا الرمز صالح لمدة <strong>24 ساعة</strong> فقط</li>
-              <li>إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذا البريد</li>
-              <li>لا تشارك هذا الرمز مع أي شخص آخر</li>
-            </ul>
+            <p style="margin: 0; color: #E65100; font-weight: bold;">⚠️ تنبيه:</p>
+            <p style="margin: 5px 0 0; color: #E65100; font-size: 13px;">
+              إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذه الرسالة.
+            </p>
           </div>
         </div>
         <div class="footer">
@@ -166,47 +245,67 @@ function getPasswordResetEmailHtml(token) {
       </div>
     </body>
     </html>
-  `;
-}
+    `;
+  }
 
-function getDeviceVerificationEmailHtml(token) {
-  return `
+  buildPasswordResetEmailText(token) {
+    return `
+    Sell In - إعادة تعيين كلمة المرور
+    ================================
+    
+    مرحباً،
+    
+    لقد تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك في Sell In.
+    
+    رمز إعادة تعيين كلمة المرور هو:
+    ${token}
+    
+    ⏰ هذا الرمز صالح لمدة 24 ساعة
+    
+    ⚠️ إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذه الرسالة.
+    
+    © ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة
+    `;
+  }
+
+  buildDeviceVerificationEmailHtml(code) {
+    return `
     <!DOCTYPE html>
     <html dir="rtl" lang="ar">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; background-color: #f5f5f5; }
-        .container { max-width: 600px; margin: 20px auto; padding: 0; background: white; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
-        .header { background: linear-gradient(135deg, #7F1D1D, #991B1B); color: white; padding: 30px 20px; text-align: center; }
-        .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
-        .header p { margin: 5px 0 0; opacity: 0.9; font-size: 14px; }
-        .content { padding: 30px; }
-        .code-box { text-align: center; background: #f8f9fa; padding: 25px; border-radius: 16px; margin: 20px 0; border: 2px dashed #7F1D1D; }
-        .code { font-size: 42px; font-weight: bold; color: #7F1D1D; letter-spacing: 8px; font-family: 'Courier New', monospace; background: white; padding: 10px 20px; border-radius: 8px; display: inline-block; }
-        .footer { text-align: center; font-size: 12px; color: #999; padding: 20px; border-top: 1px solid #eee; background: #fafafa; }
-        .warning { background: #FFF3E0; padding: 15px; border-radius: 12px; margin: 20px 0; border-right: 4px solid #FF9800; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #7F1D1D, #991B1B); color: white; padding: 20px; border-radius: 16px 16px 0 0; text-align: center; margin: -30px -30px 0 -30px; }
+        .code-box { background: #f8f9fa; padding: 25px; border-radius: 12px; text-align: center; margin: 20px 0; border: 2px dashed #7F1D1D; }
+        .code { font-size: 42px; font-weight: bold; color: #7F1D1D; letter-spacing: 8px; font-family: monospace; }
+        .warning { background: #FFF3E0; padding: 15px; border-radius: 12px; border-right: 4px solid #FF9800; }
+        .footer { text-align: center; color: #999; font-size: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; }
       </style>
     </head>
     <body>
       <div class="container">
         <div class="header">
           <h1>🛡️ Sell In</h1>
-          <p>سوقك الإلكتروني الموثوق</p>
+          <p style="opacity: 0.9;">سوقك الإلكتروني الموثوق</p>
         </div>
         <div class="content">
-          <h2 style="color: #7F1D1D;">🔐 التحقق من جهاز جديد</h2>
+          <h2 style="color: #7F1D1D;">📱 تأكيد جهاز جديد</h2>
           <p>مرحباً،</p>
-          <p>تم طلب تسجيل الدخول إلى حسابك من جهاز جديد.</p>
+          <p>لقد تم محاولة تسجيل الدخول من جهاز جديد. لتأكيد هويتك، يرجى استخدام الرمز التالي:</p>
           <div class="code-box">
-            <p style="margin-bottom: 12px; color: #666; font-size: 14px;">🔑 رمز التحقق الخاص بك هو:</p>
-            <div class="code">${token}</div>
-            <p style="margin-top: 12px; color: #666; font-size: 12px;">أدخل هذا الرمز في التطبيق لتأكيد الجهاز</p>
+            <div class="code">${code}</div>
+            <p style="margin-top: 12px; color: #666; font-size: 12px;">
+              ⏰ هذا الرمز صالح لمدة <strong>10 دقائق</strong>
+            </p>
           </div>
           <div class="warning">
-            <p style="margin: 0; color: #E65100; font-weight: bold;">⚠️ هذا الرمز صالح لمدة <strong>10 دقائق</strong> فقط</p>
-            <p style="margin: 5px 0 0; color: #E65100; font-size: 13px;">🔒 إذا لم تكن أنت من حاول تسجيل الدخول، يرجى تغيير كلمة المرور فوراً.</p>
+            <p style="margin: 0; color: #E65100; font-weight: bold;">⚠️ تنبيه:</p>
+            <p style="margin: 5px 0 0; color: #E65100; font-size: 13px;">
+              إذا لم تكن أنت من حاول تسجيل الدخول، يرجى تغيير كلمة المرور فوراً.
+            </p>
           </div>
         </div>
         <div class="footer">
@@ -215,57 +314,99 @@ function getDeviceVerificationEmailHtml(token) {
       </div>
     </body>
     </html>
-  `;
+    `;
+  }
+
+  buildDeviceVerificationEmailText(code) {
+    return `
+    Sell In - تأكيد جهاز جديد
+    ================================
+    
+    مرحباً،
+    
+    لقد تم محاولة تسجيل الدخول من جهاز جديد.
+    
+    رمز تأكيد الجهاز هو:
+    ${code}
+    
+    ⏰ هذا الرمز صالح لمدة 10 دقائق
+    
+    ⚠️ إذا لم تكن أنت من حاول تسجيل الدخول، يرجى تغيير كلمة المرور فوراً.
+    
+    © ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة
+    `;
+  }
+
+  buildWelcomeEmailHtml(userName) {
+    return `
+    <!DOCTYPE html>
+    <html dir="rtl" lang="ar">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; padding: 20px; }
+        .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        .header { background: linear-gradient(135deg, #7F1D1D, #991B1B); color: white; padding: 20px; border-radius: 16px 16px 0 0; text-align: center; margin: -30px -30px 0 -30px; }
+        .footer { text-align: center; color: #999; font-size: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; }
+        .feature { background: #f0f7ff; padding: 12px; border-radius: 8px; margin: 8px 0; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="header">
+          <h1>🛡️ Sell In</h1>
+          <p style="opacity: 0.9;">سوقك الإلكتروني الموثوق</p>
+        </div>
+        <div class="content">
+          <h2 style="color: #7F1D1D;">🎉 مرحباً بك ${userName}!</h2>
+          <p>شكراً لانضمامك إلى <strong>Sell In</strong> - سوقك الإلكتروني الموثوق.</p>
+          
+          <div style="background: #f0f7ff; padding: 16px; border-radius: 12px; margin: 16px 0;">
+            <h3 style="color: #7F1D1D; margin: 0 0 8px 0;">🌟 مميزات التطبيق:</h3>
+            <div class="feature">📦 نشر إعلاناتك بسهولة</div>
+            <div class="feature">💰 دفع آمن عبر محافظ إلكترونية</div>
+            <div class="feature">📱 متابعة طلباتك ومشترياتك</div>
+            <div class="feature">⭐ تقييم البائعين والمشترين</div>
+          </div>
+          
+          <p style="margin-top: 16px;">
+            <strong>💡 نصائح للبدء:</strong><br>
+            1. أضف منتجك الأول الآن<br>
+            2. اختر الباقة المناسبة لك<br>
+            3. ابدأ في البيع والشراء
+          </p>
+        </div>
+        <div class="footer">
+          <p>© ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة</p>
+        </div>
+      </div>
+    </body>
+    </html>
+    `;
+  }
+
+  buildWelcomeEmailText(userName) {
+    return `
+    Sell In - مرحباً بك!
+    ================================
+    
+    مرحباً بك ${userName} في Sell In!
+    
+    مميزات التطبيق:
+    📦 نشر إعلاناتك بسهولة
+    💰 دفع آمن عبر محافظ إلكترونية
+    📱 متابعة طلباتك ومشترياتك
+    ⭐ تقييم البائعين والمشترين
+    
+    نصائح للبدء:
+    1. أضف منتجك الأول الآن
+    2. اختر الباقة المناسبة لك
+    3. ابدأ في البيع والشراء
+    
+    © ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة
+    `;
+  }
 }
 
-// ✅ قوالب الإيميلات - دوال كاملة (للتوافق مع الكود السابق)
-function getVerificationEmailTemplate(token) {
-  return {
-    subject: '✅ تفعيل حسابك في Sell In',
-    html: getVerificationEmailHtml(token)
-  };
-}
-
-function getPasswordResetEmailTemplate(token) {
-  return {
-    subject: '🔐 إعادة تعيين كلمة المرور - Sell In',
-    html: getPasswordResetEmailHtml(token)
-  };
-}
-
-function getDeviceVerificationEmailTemplate(token) {
-  return {
-    subject: '🔐 رمز التحقق لتسجيل الدخول - Sell In',
-    html: getDeviceVerificationEmailHtml(token)
-  };
-}
-
-// ✅ دوال إرسال محددة
-async function sendVerificationEmail(to, token) {
-  const { subject, html } = getVerificationEmailTemplate(token);
-  return sendEmail(to, subject, html);
-}
-
-async function sendPasswordResetEmail(to, token) {
-  const { subject, html } = getPasswordResetEmailTemplate(token);
-  return sendEmail(to, subject, html);
-}
-
-async function sendDeviceVerificationEmail(to, token) {
-  const { subject, html } = getDeviceVerificationEmailTemplate(token);
-  return sendEmail(to, subject, html);
-}
-
-module.exports = {
-  sendEmail,
-  sendEmailWithRetry,
-  getVerificationEmailHtml,
-  getPasswordResetEmailHtml,
-  getDeviceVerificationEmailHtml,
-  getVerificationEmailTemplate,
-  getPasswordResetEmailTemplate,
-  getDeviceVerificationEmailTemplate,
-  sendVerificationEmail,
-  sendPasswordResetEmail,
-  sendDeviceVerificationEmail
-};
+module.exports = new EmailService();
