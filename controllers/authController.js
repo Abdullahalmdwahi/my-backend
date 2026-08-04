@@ -5,7 +5,7 @@
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
 const { getSupabaseClient } = require('../config/supabase');
-const emailService = require('../services/emailService');
+const emailService = require('../services/email');
 const jwtService = require('../services/jwtService');
 const { verifyToken } = require('../middleware/auth');
 
