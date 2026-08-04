@@ -45,16 +45,7 @@ app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 // ============================================
 
 app.use((req, res, next) => {
-  const start = Date.now();
   console.log(`📝 [${new Date().toISOString()}] ${req.method} ${req.url}`);
-  
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    const status = res.statusCode;
-    const emoji = status >= 400 ? '❌' : status >= 300 ? '⚠️' : '✅';
-    console.log(`${emoji} [${new Date().toISOString()}] ${req.method} ${req.url} - ${status} - ${duration}ms`);
-  });
-  
   next();
 });
 
