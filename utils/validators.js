@@ -1,22 +1,16 @@
 // ============================================
-// ✅ VALIDATORS - تم إصلاحها ✅
+// ✅ VALIDATORS - نسخة معدلة
 // ============================================
 
-const { validateEmail, validatePhoneNumber } = require('./helpers');
+const { validateEmail: validateEmailHelper, validatePhoneNumber } = require('./helpers');
 
 // ============================================
-// 🔢 ID VALIDATORS - تم إصلاحها للتعامل مع UUID ✅
+// 🔢 ID VALIDATORS
 // ============================================
 
-/**
- * التحقق من صحة المعرف (يدعم UUID والأرقام)
- * @param {string|number} id - المعرف المراد التحقق منه
- * @returns {Object} - { valid: boolean, message: string }
- */
 function validateId(id) {
   if (!id) return { valid: false, message: 'المعرف مطلوب' };
   
-  // إذا كان المعرف من نوع UUID
   if (typeof id === 'string' && id.includes('-')) {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (uuidRegex.test(id)) {
@@ -25,7 +19,6 @@ function validateId(id) {
     return { valid: false, message: 'المعرف غير صالح (UUID غير صحيح)' };
   }
   
-  // إذا كان المعرف رقمياً
   if (typeof id === 'number' || (typeof id === 'string' && /^\d+$/.test(id))) {
     const num = typeof id === 'string' ? parseInt(id) : id;
     if (num > 0) {
@@ -37,11 +30,6 @@ function validateId(id) {
   return { valid: false, message: 'المعرف غير صالح' };
 }
 
-/**
- * التحقق من صحة مجموعة معرفات
- * @param {Array} ids - مجموعة المعرفات
- * @returns {Object} - { valid: boolean, message: string }
- */
 function validateIds(ids) {
   if (!ids || !Array.isArray(ids)) {
     return { valid: false, message: 'المعرفات مطلوبة' };
@@ -67,9 +55,10 @@ function validateName(name) {
   return { valid: true };
 }
 
+// ✅ النسخة الوحيدة من validateEmail - استخدمت validateEmailHelper من helpers
 function validateEmail(email) {
   if (!email) return { valid: false, message: 'البريد الإلكتروني مطلوب' };
-  if (!validateEmail(email)) return { valid: false, message: 'البريد الإلكتروني غير صحيح' };
+  if (!validateEmailHelper(email)) return { valid: false, message: 'البريد الإلكتروني غير صحيح' };
   return { valid: true };
 }
 
@@ -290,7 +279,7 @@ function validateTag(tag) {
 }
 
 // ============================================
-// 📝 REVIEW/RATING VALIDATORS
+// 📌 REVIEW/RATING VALIDATORS
 // ============================================
 
 function validateRating(rating) {
