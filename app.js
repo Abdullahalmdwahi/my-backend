@@ -7,7 +7,6 @@ const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const bodyParser = require('body-parser');
-// const morgan = require('morgan'); // تم إزالة morgan
 const path = require('path');
 
 const { errorHandler } = require('./middleware/errorHandler');
@@ -15,7 +14,6 @@ const { limiter } = require('./middleware/rateLimit');
 const { securityHeaders } = require('./middleware/security');
 const { sanitizeBody } = require('./middleware/security');
 const apiRoutes = require('./routes/api');
-const logger = require('./utils/logger');
 
 const app = express();
 
@@ -43,22 +41,18 @@ app.use(bodyParser.json({ limit: '50mb' }));
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
 // ============================================
-// 📝 LOGGING - مخصص بدلاً من morgan
+// 📝 LOGGING - مخصص (بدون morgan)
 // ============================================
 
-// تسجيل مخصص للطلبات (بديل عن morgan)
 app.use((req, res, next) => {
   const start = Date.now();
+  console.log(`📝 [${new Date().toISOString()}] ${req.method} ${req.url}`);
   
-  // تسجيل الطلب الوارد
-  console.log(`📝 [${new Date().toISOString()}] ${req.method} ${req.url} - ${req.ip || req.connection?.remoteAddress}`);
-  
-  // تسجيل الرد عند الانتهاء
   res.on('finish', () => {
     const duration = Date.now() - start;
     const status = res.statusCode;
-    const statusEmoji = status >= 400 ? '❌' : status >= 300 ? '⚠️' : '✅';
-    console.log(`${statusEmoji} [${new Date().toISOString()}] ${req.method} ${req.url} - ${status} - ${duration}ms`);
+    const emoji = status >= 400 ? '❌' : status >= 300 ? '⚠️' : '✅';
+    console.log(`${emoji} [${new Date().toISOString()}] ${req.method} ${req.url} - ${status} - ${duration}ms`);
   });
   
   next();
