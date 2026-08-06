@@ -170,141 +170,188 @@ const authController = {
   // ============================================
   // 🔑 LOGIN - المحسّن
   // ============================================
-  login: async (req, res) => {
+ login: async (req, res) => {
     try {
-      console.log('🔐 [LOGIN] Request received');
-      
-      const { email, password, deviceId, deviceName } = req.body;
+        console.log('🔐 [LOGIN] Request received');
+        
+        const { email, password, deviceId, deviceName } = req.body;
 
-      if (!email || !password) {
-        throw new ValidationError('⚠️ البريد الإلكتروني وكلمة المرور مطلوبة');
-      }
+        // ✅ التحقق من وجود البيانات
+        if (!email || !password) {
+            return res.status(400).json({
+                success: false,
+                message: '⚠️ البريد الإلكتروني وكلمة المرور مطلوبة'
+            });
+        }
 
-      console.log(`✅ [LOGIN] محاولة للمستخدم: ${email}`);
+        console.log(`✅ [LOGIN] محاولة للمستخدم: ${email}`);
 
-      const supabase = getSupabaseClient();
+        const supabase = getSupabaseClient();
 
-      const { data: user, error } = await supabase
-        .from('users')
-        .select('*')
-        .eq('email', email.trim())
-        .maybeSingle();
-
-      if (error || !user) {
-        console.error(`❌ [LOGIN] المستخدم غير موجود: ${email}`);
-        throw new AuthError('⚠️ البريد الإلكتروني أو كلمة المرور غير صحيحة');
-      }
-
-      console.log(`✅ [LOGIN] تم العثور على المستخدم: ${user.id}`);
-
-      if (!user.is_active) {
-        throw new AppError('⚠️ هذا الحساب معطل، يرجى التواصل مع الدعم', 403, 'ACCOUNT_DISABLED');
-      }
-
-      const isPasswordValid = await comparePassword(password, user.password);
-      if (!isPasswordValid) {
-        console.error(`❌ [LOGIN] كلمة المرور غير صحيحة: ${email}`);
-        throw new AuthError('⚠️ البريد الإلكتروني أو كلمة المرور غير صحيحة');
-      }
-
-      console.log(`✅ [LOGIN] تم التحقق من كلمة المرور بنجاح`);
-
-      if (!user.is_verified) {
-        const otp = generateOTP();
-        await supabase.from('verification_tokens').insert({
-          email: email,
-          token: otp,
-          type: 'verification',
-          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-          is_used: false,
-          created_at: new Date().toISOString(),
+        // ✅ الخطوة 1: المصادقة عبر Supabase Auth
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+            email: email.trim(),
+            password: password,
         });
-        await emailService.sendVerificationEmail(email, otp);
 
-        return res.status(403).json({
-          success: false,
-          message: '⚠️ الحساب غير مفعل. تم إرسال رمز التفعيل إلى بريدك الإلكتروني',
-          requiresVerification: true,
-          code: 'ACCOUNT_NOT_VERIFIED',
+        // ✅ التحقق من نجاح المصادقة
+        if (authError || !authData?.user) {
+            console.error('❌ [LOGIN] فشل المصادقة:', authError);
+            
+            // ✅ التحقق مما إذا كان المستخدم غير مفعل
+            if (authError?.message?.includes('Email not confirmed')) {
+                return res.status(403).json({
+                    success: false,
+                    message: '⚠️ الحساب غير مفعل. يرجى التحقق من بريدك الإلكتروني',
+                    requiresVerification: true,
+                    code: 'ACCOUNT_NOT_VERIFIED'
+                });
+            }
+
+            return res.status(401).json({
+                success: false,
+                message: '❌ البريد الإلكتروني أو كلمة المرور غير صحيحة'
+            });
+        }
+
+        const authUser = authData.user;
+        console.log(`✅ [LOGIN] تم المصادقة بنجاح: ${authUser.id}`);
+
+        // ✅ الخطوة 2: جلب بيانات المستخدم الإضافية من جدول users
+        let userData = {};
+        try {
+            const { data: user, error: userError } = await supabase
+                .from('users')
+                .select('*')
+                .eq('id', authUser.id)
+                .maybeSingle();
+
+            if (!userError && user) {
+                userData = user;
+            }
+        } catch (err) {
+            console.warn('⚠️ [LOGIN] فشل جلب بيانات إضافية:', err.message);
+        }
+
+        // ✅ الخطوة 3: دمج البيانات
+        const user = {
+            id: authUser.id,
+            email: authUser.email,
+            name: userData.name || authUser.email?.split('@')[0] || 'مستخدم',
+            business_name: userData.business_name || '',
+            phone: userData.phone || '',
+            role: userData.role || 'user',
+            is_verified: authUser.email_confirmed_at != null,
+            free_posts_remaining: userData.free_posts_remaining ?? 1,
+            is_active: userData.is_active !== false,
+            created_at: userData.created_at || authUser.created_at,
+            last_login_at: new Date().toISOString(),
+            // ✅ إضافة الحقول المفقودة
+            full_name: userData.full_name || null,
+            national_id: userData.national_id || null,
+            wallet_phone: userData.wallet_phone || null,
+            display_phone: userData.display_phone || null,
+            user_type_id: userData.user_type_id || '1',
+            specializations: userData.specializations || [],
+        };
+
+        // ✅ الخطوة 4: التحقق من أن الحساب نشط
+        if (user.is_active === false) {
+            return res.status(403).json({
+                success: false,
+                message: '⚠️ هذا الحساب معطل، يرجى التواصل مع الدعم',
+                code: 'ACCOUNT_DISABLED'
+            });
+        }
+
+        // ✅ الخطوة 5: التحقق من الجهاز (اختياري)
+        const deviceIdToCheck = deviceId || 'unknown';
+        const { data: device } = await supabase
+            .from('devices')
+            .select('*')
+            .eq('user_id', user.id)
+            .eq('device_id', deviceIdToCheck)
+            .maybeSingle();
+
+        if (!device) {
+            const otp = generateOTP();
+            await supabase.from('verification_tokens').insert({
+                email: email,
+                token: otp,
+                type: 'device_verification',
+                expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+                is_used: false,
+                created_at: new Date().toISOString(),
+            });
+            
+            // ✅ محاولة إرسال الإيميل ولكن لا نعطل العملية إذا فشل
+            try {
+                await emailService.sendDeviceVerificationEmail(email, otp);
+            } catch (emailErr) {
+                console.warn('⚠️ [LOGIN] فشل إرسال إيميل التحقق:', emailErr.message);
+            }
+
+            return res.status(403).json({
+                success: false,
+                message: '📱 جهاز جديد غير معروف. تم إرسال رمز التحقق إلى بريدك الإلكتروني',
+                requiresDeviceVerification: true,
+                code: 'NEW_DEVICE_DETECTED'
+            });
+        }
+
+        // ✅ تحديث آخر ظهور للجهاز
+        await supabase
+            .from('devices')
+            .update({
+                last_seen: new Date().toISOString(),
+                device_name: deviceName || device.device_name,
+            })
+            .eq('id', device.id);
+
+        // ✅ تحديث آخر تسجيل دخول
+        await supabase
+            .from('users')
+            .update({
+                last_login_at: new Date().toISOString(),
+            })
+            .eq('id', user.id);
+
+        // ✅ إنشاء التوكنات
+        const { accessToken, refreshToken } = generateTokens(user);
+
+        // ✅ حفظ Refresh Token
+        await supabase.from('refresh_tokens').insert({
+            user_id: user.id,
+            token: refreshToken,
+            expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+            created_at: new Date().toISOString(),
         });
-      }
 
-      const deviceIdToCheck = deviceId || 'unknown';
-      const { data: device } = await supabase
-        .from('devices')
-        .select('*')
-        .eq('user_id', user.id)
-        .eq('device_id', deviceIdToCheck)
-        .maybeSingle();
+        // ✅ إزالة البيانات الحساسة
+        delete user.password;
 
-      if (!device) {
-        const otp = generateOTP();
-        await supabase.from('verification_tokens').insert({
-          email: email,
-          token: otp,
-          type: 'device_verification',
-          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-          is_used: false,
-          created_at: new Date().toISOString(),
+        console.log(`✅ [LOGIN] تسجيل دخول ناجح للمستخدم: ${email}`);
+
+        return res.json({
+            success: true,
+            message: '✅ تم تسجيل الدخول بنجاح',
+            data: {
+                user,
+                accessToken,
+                refreshToken,
+            },
         });
-        await emailService.sendDeviceVerificationEmail(email, otp);
-
-        return res.status(403).json({
-          success: false,
-          message: '📱 جهاز جديد غير معروف. تم إرسال رمز التحقق إلى بريدك الإلكتروني',
-          requiresDeviceVerification: true,
-          code: 'NEW_DEVICE_DETECTED',
-        });
-      }
-
-      await supabase
-        .from('devices')
-        .update({
-          last_seen: new Date().toISOString(),
-          device_name: deviceName || device.device_name,
-        })
-        .eq('id', device.id);
-
-      await supabase
-        .from('users')
-        .update({
-          last_login_at: new Date().toISOString(),
-        })
-        .eq('id', user.id);
-
-      const { accessToken, refreshToken } = generateTokens(user);
-
-      await supabase.from('refresh_tokens').insert({
-        user_id: user.id,
-        token: refreshToken,
-        expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-        created_at: new Date().toISOString(),
-      });
-
-      delete user.password;
-
-      console.log(`✅ [LOGIN] تسجيل دخول ناجح للمستخدم: ${email}`);
-
-      res.json({
-        success: true,
-        message: '✅ تم تسجيل الدخول بنجاح',
-        data: {
-          user,
-          accessToken,
-          refreshToken,
-        },
-      });
 
     } catch (error) {
-      console.error('❌ [LOGIN] Error:', error);
-      res.status(error.statusCode || 500).json({
-        success: false,
-        message: error.message || '❌ حدث خطأ أثناء تسجيل الدخول',
-        code: error.code || 'INTERNAL_ERROR',
-        timestamp: new Date().toISOString(),
-      });
+        console.error('❌ [LOGIN] خطأ غير متوقع:', error);
+        return res.status(500).json({
+            success: false,
+            message: '❌ حدث خطأ في الخادم: ' + (error.message || 'غير معروف'),
+            code: 'INTERNAL_ERROR',
+            timestamp: new Date().toISOString(),
+        });
     }
-  },
+},
 
   // ============================================
   // ✅ VERIFY
