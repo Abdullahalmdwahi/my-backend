@@ -272,12 +272,12 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // ============================================
-// 🚀 START SERVER - بدون Socket.IO مؤقتاً
+// 🚀 START SERVER - بدون Socket.IO
 // ============================================
 
 const PORT = process.env.PORT || 3000;
 
-// إنشاء خادم HTTP بسيط بدون Socket.IO
+// ✅ استخدام app.listen فقط (بدون Socket.IO)
 const server = app.listen(PORT, () => {
   console.log('═'.repeat(50));
   console.log('🚀 Sell In API Server');
@@ -288,17 +288,13 @@ const server = app.listen(PORT, () => {
   console.log(`📚 Docs: http://localhost:${PORT}/api/docs`);
   console.log(`🏥 Health: http://localhost:${PORT}/health`);
   console.log('═'.repeat(50));
+  console.log('✅ Server is running and stable');
 });
 
 // ============================================
-// 🛑 GRACEFUL SHUTDOWN - مع منع الإغلاق التلقائي
+// 🛑 GRACEFUL SHUTDOWN
 // ============================================
 
-// إزالة معالج الإغلاق التلقائي
-process.removeAllListeners('SIGTERM');
-process.removeAllListeners('SIGINT');
-
-// معالج إغلاق يدوي فقط
 process.on('SIGTERM', () => {
   console.log('🛑 Received SIGTERM, shutting down gracefully...');
   server.close(() => {
@@ -314,7 +310,5 @@ process.on('SIGINT', () => {
     process.exit(0);
   });
 });
-
-console.log('✅ Server is ready and will stay running');
 
 module.exports = app;
