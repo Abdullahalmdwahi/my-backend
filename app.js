@@ -100,7 +100,7 @@ app.use('/api', limiter);
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', strictLimiter);
 
-// 9. تنظيم المدخلات
+// 9. تنظيف المدخلات
 app.use(sanitizeBody);
 
 // 10. معالجة الاستثناءات
@@ -124,113 +124,6 @@ app.use('/temp', express.static(path.join(__dirname, 'temp')));
 // ============================================
 // 🚏 ROUTES
 // ============================================
-
-// ✅ المسار الرئيسي - صفحة الترحيب (تمت الإضافة)
-app.get('/', (req, res) => {
-  res.json({
-    success: true,
-    message: '🚀 مرحباً بك في Sell In API',
-    version: process.env.APP_VERSION || '2.0.0',
-    status: 'online',
-    timestamp: new Date().toISOString(),
-    endpoints: {
-      docs: '/api/docs',
-      health: '/health',
-      api: '/api',
-      auth: {
-        register: 'POST /api/auth/register',
-        login: 'POST /api/auth/login',
-        verify: 'POST /api/auth/verify',
-        me: 'GET /api/auth/me',
-        logout: 'POST /api/auth/logout',
-      },
-      products: {
-        list: 'GET /api/products',
-        create: 'POST /api/products',
-        search: 'GET /api/products/search',
-        getById: 'GET /api/products/:id',
-      },
-      auctions: {
-        list: 'GET /api/auctions',
-        create: 'POST /api/auctions',
-        placeBid: 'POST /api/auctions/:id/bid',
-        getById: 'GET /api/auctions/:id',
-      },
-      orders: {
-        list: 'GET /api/orders',
-        create: 'POST /api/orders',
-        getById: 'GET /api/orders/:id',
-      },
-      payments: {
-        methods: 'GET /api/payments/methods',
-        create: 'POST /api/payments',
-      },
-      wallets: {
-        balance: 'GET /api/wallets/balance',
-        transactions: 'GET /api/wallets/transactions',
-      },
-      tickets: {
-        create: 'POST /api/tickets',
-        messages: 'GET /api/tickets/:ticketId/messages',
-      },
-      admin: {
-        stats: 'GET /api/admin/stats',
-        users: 'GET /api/admin/users',
-      },
-      notifications: {
-        list: 'GET /api/notifications',
-        markRead: 'POST /api/notifications/:id/read',
-      },
-    },
-    documentation: 'https://my-backend-hvha.onrender.com/api/health',
-    support: '📧 support@sellin.com',
-  });
-});
-
-// ✅ صفحة التوثيق البسيطة
-app.get('/api/docs', (req, res) => {
-  res.json({
-    success: true,
-    message: '📚 توثيق API - Sell In',
-    version: '2.0.0',
-    base_url: process.env.API_BASE_URL || 'https://my-backend-hvha.onrender.com',
-    authentication: {
-      type: 'Bearer Token',
-      header: 'Authorization: Bearer <your_token>',
-      endpoints: {
-        login: 'POST /api/auth/login',
-        register: 'POST /api/auth/register',
-        refresh: 'POST /api/auth/refresh-token',
-      }
-    },
-    modules: {
-      auth: '/api/auth',
-      users: '/api/users',
-      products: '/api/products',
-      auctions: '/api/auctions',
-      orders: '/api/orders',
-      payments: '/api/payments',
-      wallets: '/api/wallets',
-      admin: '/api/admin',
-      notifications: '/api/notifications',
-      tickets: '/api/tickets',
-    },
-    health: '/health',
-    stats: '/api/stats',
-  });
-});
-
-// ✅ مسار إضافي للتحقق من صحة الخادم
-app.get('/api/status', (req, res) => {
-  res.json({
-    success: true,
-    status: 'online',
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    environment: process.env.NODE_ENV || 'development',
-    timestamp: new Date().toISOString(),
-  });
-});
 
 app.use('/api', apiRoutes);
 
@@ -263,22 +156,6 @@ app.use((req, res) => {
     message: '❌ المسار غير موجود',
     path: req.originalUrl,
     method: req.method,
-    available_endpoints: [
-      '/',
-      '/api/docs',
-      '/health',
-      '/api/status',
-      '/api/stats',
-      '/api/auth/*',
-      '/api/products/*',
-      '/api/auctions/*',
-      '/api/orders/*',
-      '/api/payments/*',
-      '/api/wallets/*',
-      '/api/admin/*',
-      '/api/notifications/*',
-      '/api/tickets/*',
-    ]
   });
 });
 
@@ -300,8 +177,6 @@ const server = app.listen(PORT, () => {
   console.log(`📡 Port: ${PORT}`);
   console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
   console.log(`🗄️ Supabase: ${process.env.SUPABASE_URL ? '✅ Connected' : '❌ Not connected'}`);
-  console.log(`📚 Docs: http://localhost:${PORT}/api/docs`);
-  console.log(`🏥 Health: http://localhost:${PORT}/health`);
   console.log('═'.repeat(50));
 });
 
