@@ -1,5 +1,5 @@
 // ============================================
-// 🔐 AUTH CONTROLLER - تم إصلاحه ✅
+// 🔐 AUTH CONTROLLER - نسخة متقدمة
 // ============================================
 
 const bcrypt = require('bcrypt');
@@ -7,7 +7,7 @@ const { v4: uuidv4 } = require('uuid');
 const { getSupabaseClient } = require('../config/supabase');
 const emailService = require('../services/email');
 const jwtService = require('../services/jwtService');
-const { verifyToken } = require('../middleware/auth');
+const { AppError, ValidationError, AuthError, ConflictError } = require('../middleware/errorHandler');
 
 // ============================================
 // HELPER FUNCTIONS
@@ -18,7 +18,7 @@ const generateOTP = () => {
 };
 
 const hashPassword = async (password) => {
-  const salt = await bcrypt.genSalt(10);
+  const salt = await bcrypt.genSalt(12);
   return await bcrypt.hash(password, salt);
 };
 
@@ -33,12 +33,13 @@ const generateTokens = (user) => {
 };
 
 // ============================================
-// AUTH CONTROLLER - تم إصلاحه ✅
+// 🎯 AUTH CONTROLLER
 // ============================================
 
 const authController = {
+
   // ============================================
-  // REGISTER - تم إصلاحه للتعامل مع UUID ✅
+  // 📝 REGISTER
   // ============================================
   register: async (req, res) => {
     try {
@@ -52,34 +53,21 @@ const authController = {
         deviceName,
       } = req.body;
 
-      // Validate required fields
       if (!email || !password) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ البريد الإلكتروني وكلمة المرور مطلوبة',
-        });
+        throw new ValidationError('⚠️ البريد الإلكتروني وكلمة المرور مطلوبة');
       }
 
-      // Validate email format
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ البريد الإلكتروني غير صحيح',
-        });
+        throw new ValidationError('⚠️ البريد الإلكتروني غير صحيح');
       }
 
-      // Validate password strength
       if (password.length < 6) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ كلمة المرور يجب أن تكون 6 أحرف على الأقل',
-        });
+        throw new ValidationError('⚠️ كلمة المرور يجب أن تكون 6 أحرف على الأقل');
       }
 
       const supabase = getSupabaseClient();
 
-      // Check if user exists
       const { data: existingUser } = await supabase
         .from('users')
         .select('id')
@@ -87,13 +75,9 @@ const authController = {
         .maybeSingle();
 
       if (existingUser) {
-        return res.status(409).json({
-          success: false,
-          message: '⚠️ البريد الإلكتروني مسجل بالفعل',
-        });
+        throw new ConflictError('⚠️ البريد الإلكتروني مسجل بالفعل');
       }
 
-      // Check business name
       if (businessName) {
         const { data: existingBusiness } = await supabase
           .from('users')
@@ -102,17 +86,12 @@ const authController = {
           .maybeSingle();
 
         if (existingBusiness) {
-          return res.status(409).json({
-            success: false,
-            message: '⚠️ هذا الاسم التجاري مستخدم بالفعل',
-          });
+          throw new ConflictError('⚠️ هذا الاسم التجاري مستخدم بالفعل');
         }
       }
 
-      // Hash password
       const hashedPassword = await hashPassword(password);
 
-      // Create user - استخدام UUID
       const userId = uuidv4();
       const userData = {
         id: userId,
@@ -139,18 +118,12 @@ const authController = {
 
       if (error) {
         console.error('❌ User creation error:', error);
-        return res.status(500).json({
-          success: false,
-          message: '❌ فشل إنشاء الحساب',
-          error: error.message,
-        });
+        throw new AppError('❌ فشل إنشاء الحساب', 500, 'DB_ERROR');
       }
 
-      // Generate OTP
       const otp = generateOTP();
       const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
-      // Save OTP
       await supabase.from('verification_tokens').insert({
         email: email,
         token: otp,
@@ -160,13 +133,10 @@ const authController = {
         created_at: new Date().toISOString(),
       });
 
-      // Send verification email
       await emailService.sendVerificationEmail(email, otp);
 
-      // Generate tokens
       const { accessToken, refreshToken } = generateTokens(user);
 
-      // Save refresh token
       await supabase.from('refresh_tokens').insert({
         user_id: userId,
         token: refreshToken,
@@ -174,7 +144,6 @@ const authController = {
         created_at: new Date().toISOString(),
       });
 
-      // Remove password from response
       delete user.password;
 
       res.status(201).json({
@@ -189,32 +158,32 @@ const authController = {
 
     } catch (error) {
       console.error('❌ Register error:', error);
-      res.status(500).json({
+      res.status(error.statusCode || 500).json({
         success: false,
-        message: '❌ حدث خطأ أثناء إنشاء الحساب',
-        error: error.message,
+        message: error.message || '❌ حدث خطأ أثناء إنشاء الحساب',
+        code: error.code || 'INTERNAL_ERROR',
+        timestamp: new Date().toISOString(),
       });
     }
   },
 
   // ============================================
-  // LOGIN - تم إصلاحه ✅
+  // 🔑 LOGIN - المحسّن
   // ============================================
   login: async (req, res) => {
     try {
+      console.log('🔐 [LOGIN] Request received');
+      
       const { email, password, deviceId, deviceName } = req.body;
 
-      // Validate
       if (!email || !password) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ البريد الإلكتروني وكلمة المرور مطلوبة',
-        });
+        throw new ValidationError('⚠️ البريد الإلكتروني وكلمة المرور مطلوبة');
       }
+
+      console.log(`✅ [LOGIN] محاولة للمستخدم: ${email}`);
 
       const supabase = getSupabaseClient();
 
-      // Get user
       const { data: user, error } = await supabase
         .from('users')
         .select('*')
@@ -222,32 +191,25 @@ const authController = {
         .maybeSingle();
 
       if (error || !user) {
-        return res.status(401).json({
-          success: false,
-          message: '⚠️ البريد الإلكتروني أو كلمة المرور غير صحيحة',
-        });
+        console.error(`❌ [LOGIN] المستخدم غير موجود: ${email}`);
+        throw new AuthError('⚠️ البريد الإلكتروني أو كلمة المرور غير صحيحة');
       }
 
-      // Check if user is active
+      console.log(`✅ [LOGIN] تم العثور على المستخدم: ${user.id}`);
+
       if (!user.is_active) {
-        return res.status(403).json({
-          success: false,
-          message: '⚠️ هذا الحساب معطل، يرجى التواصل مع الدعم',
-        });
+        throw new AppError('⚠️ هذا الحساب معطل، يرجى التواصل مع الدعم', 403, 'ACCOUNT_DISABLED');
       }
 
-      // Verify password
       const isPasswordValid = await comparePassword(password, user.password);
       if (!isPasswordValid) {
-        return res.status(401).json({
-          success: false,
-          message: '⚠️ البريد الإلكتروني أو كلمة المرور غير صحيحة',
-        });
+        console.error(`❌ [LOGIN] كلمة المرور غير صحيحة: ${email}`);
+        throw new AuthError('⚠️ البريد الإلكتروني أو كلمة المرور غير صحيحة');
       }
 
-      // Check if user is verified
+      console.log(`✅ [LOGIN] تم التحقق من كلمة المرور بنجاح`);
+
       if (!user.is_verified) {
-        // Send new OTP
         const otp = generateOTP();
         await supabase.from('verification_tokens').insert({
           email: email,
@@ -263,19 +225,19 @@ const authController = {
           success: false,
           message: '⚠️ الحساب غير مفعل. تم إرسال رمز التفعيل إلى بريدك الإلكتروني',
           requiresVerification: true,
+          code: 'ACCOUNT_NOT_VERIFIED',
         });
       }
 
-      // Check device
+      const deviceIdToCheck = deviceId || 'unknown';
       const { data: device } = await supabase
         .from('devices')
         .select('*')
         .eq('user_id', user.id)
-        .eq('device_id', deviceId || 'unknown')
+        .eq('device_id', deviceIdToCheck)
         .maybeSingle();
 
       if (!device) {
-        // New device detected, send OTP
         const otp = generateOTP();
         await supabase.from('verification_tokens').insert({
           email: email,
@@ -291,10 +253,10 @@ const authController = {
           success: false,
           message: '📱 جهاز جديد غير معروف. تم إرسال رمز التحقق إلى بريدك الإلكتروني',
           requiresDeviceVerification: true,
+          code: 'NEW_DEVICE_DETECTED',
         });
       }
 
-      // Update device last seen
       await supabase
         .from('devices')
         .update({
@@ -303,7 +265,6 @@ const authController = {
         })
         .eq('id', device.id);
 
-      // Update user last login
       await supabase
         .from('users')
         .update({
@@ -311,10 +272,8 @@ const authController = {
         })
         .eq('id', user.id);
 
-      // Generate tokens
       const { accessToken, refreshToken } = generateTokens(user);
 
-      // Save refresh token
       await supabase.from('refresh_tokens').insert({
         user_id: user.id,
         token: refreshToken,
@@ -322,8 +281,9 @@ const authController = {
         created_at: new Date().toISOString(),
       });
 
-      // Remove password from response
       delete user.password;
+
+      console.log(`✅ [LOGIN] تسجيل دخول ناجح للمستخدم: ${email}`);
 
       res.json({
         success: true,
@@ -336,32 +296,29 @@ const authController = {
       });
 
     } catch (error) {
-      console.error('❌ Login error:', error);
-      res.status(500).json({
+      console.error('❌ [LOGIN] Error:', error);
+      res.status(error.statusCode || 500).json({
         success: false,
-        message: '❌ حدث خطأ أثناء تسجيل الدخول',
-        error: error.message,
+        message: error.message || '❌ حدث خطأ أثناء تسجيل الدخول',
+        code: error.code || 'INTERNAL_ERROR',
+        timestamp: new Date().toISOString(),
       });
     }
   },
 
   // ============================================
-  // VERIFY - تم إصلاحه ✅
+  // ✅ VERIFY
   // ============================================
   verify: async (req, res) => {
     try {
       const { email, code } = req.body;
 
       if (!email || !code) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ البريد الإلكتروني والرمز مطلوبان',
-        });
+        throw new ValidationError('⚠️ البريد الإلكتروني والرمز مطلوبان');
       }
 
       const supabase = getSupabaseClient();
 
-      // Find token
       const { data: token, error } = await supabase
         .from('verification_tokens')
         .select('*')
@@ -372,21 +329,14 @@ const authController = {
         .maybeSingle();
 
       if (error || !token) {
-        return res.status(400).json({
-          success: false,
-          message: '❌ رمز التحقق غير صحيح أو منتهي الصلاحية',
-        });
+        throw new ValidationError('❌ رمز التحقق غير صحيح أو منتهي الصلاحية');
       }
 
-      // Mark token as used
       await supabase
         .from('verification_tokens')
-        .update({
-          is_used: true,
-        })
+        .update({ is_used: true })
         .eq('id', token.id);
 
-      // Verify user
       await supabase
         .from('users')
         .update({
@@ -402,31 +352,26 @@ const authController = {
 
     } catch (error) {
       console.error('❌ Verify error:', error);
-      res.status(500).json({
+      res.status(error.statusCode || 500).json({
         success: false,
-        message: '❌ حدث خطأ أثناء التحقق',
-        error: error.message,
+        message: error.message || '❌ حدث خطأ أثناء التحقق',
       });
     }
   },
 
   // ============================================
-  // SEND VERIFICATION
+  // 📧 SEND VERIFICATION
   // ============================================
   sendVerification: async (req, res) => {
     try {
       const { email } = req.body;
 
       if (!email) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ البريد الإلكتروني مطلوب',
-        });
+        throw new ValidationError('⚠️ البريد الإلكتروني مطلوب');
       }
 
       const supabase = getSupabaseClient();
 
-      // Check if user exists
       const { data: user } = await supabase
         .from('users')
         .select('id')
@@ -434,13 +379,9 @@ const authController = {
         .maybeSingle();
 
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: '⚠️ لا يوجد حساب بهذا البريد الإلكتروني',
-        });
+        throw new NotFoundError('المستخدم');
       }
 
-      // Generate and save OTP
       const otp = generateOTP();
       await supabase.from('verification_tokens').insert({
         email: email,
@@ -451,7 +392,6 @@ const authController = {
         created_at: new Date().toISOString(),
       });
 
-      // Send email
       await emailService.sendVerificationEmail(email, otp);
 
       res.json({
@@ -461,173 +401,26 @@ const authController = {
 
     } catch (error) {
       console.error('❌ Send verification error:', error);
-      res.status(500).json({
+      res.status(error.statusCode || 500).json({
         success: false,
-        message: '❌ حدث خطأ أثناء إرسال رمز التحقق',
-        error: error.message,
+        message: error.message || '❌ حدث خطأ أثناء إرسال رمز التحقق',
       });
     }
   },
 
   // ============================================
-  // FORGOT PASSWORD
-  // ============================================
-  forgotPassword: async (req, res) => {
-    try {
-      const { email } = req.body;
-
-      if (!email) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ البريد الإلكتروني مطلوب',
-        });
-      }
-
-      const supabase = getSupabaseClient();
-
-      // Check if user exists
-      const { data: user } = await supabase
-        .from('users')
-        .select('id')
-        .eq('email', email)
-        .maybeSingle();
-
-      if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: '⚠️ لا يوجد حساب بهذا البريد الإلكتروني',
-        });
-      }
-
-      // Generate and save reset token
-      const resetToken = generateOTP();
-      await supabase.from('verification_tokens').insert({
-        email: email,
-        token: resetToken,
-        type: 'password_reset',
-        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
-        is_used: false,
-        created_at: new Date().toISOString(),
-      });
-
-      // Send email
-      await emailService.sendPasswordResetEmail(email, resetToken);
-
-      res.json({
-        success: true,
-        message: '✅ تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني',
-      });
-
-    } catch (error) {
-      console.error('❌ Forgot password error:', error);
-      res.status(500).json({
-        success: false,
-        message: '❌ حدث خطأ أثناء إرسال رابط إعادة التعيين',
-        error: error.message,
-      });
-    }
-  },
-
-  // ============================================
-  // RESET PASSWORD
-  // ============================================
-  resetPassword: async (req, res) => {
-    try {
-      const { email, token, newPassword } = req.body;
-
-      if (!email || !token || !newPassword) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ جميع الحقول مطلوبة',
-        });
-      }
-
-      // Validate password
-      if (newPassword.length < 6) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ كلمة المرور يجب أن تكون 6 أحرف على الأقل',
-        });
-      }
-
-      const supabase = getSupabaseClient();
-
-      // Find token
-      const { data: resetToken, error } = await supabase
-        .from('verification_tokens')
-        .select('*')
-        .eq('email', email)
-        .eq('token', token)
-        .eq('type', 'password_reset')
-        .eq('is_used', false)
-        .gt('expires_at', new Date().toISOString())
-        .maybeSingle();
-
-      if (error || !resetToken) {
-        return res.status(400).json({
-          success: false,
-          message: '❌ الرمز غير صحيح أو منتهي الصلاحية',
-        });
-      }
-
-      // Mark token as used
-      await supabase
-        .from('verification_tokens')
-        .update({
-          is_used: true,
-        })
-        .eq('id', resetToken.id);
-
-      // Hash new password
-      const hashedPassword = await hashPassword(newPassword);
-
-      // Update user password
-      await supabase
-        .from('users')
-        .update({
-          password: hashedPassword,
-          updated_at: new Date().toISOString(),
-        })
-        .eq('email', email);
-
-      // Delete all refresh tokens
-      await supabase
-        .from('refresh_tokens')
-        .delete()
-        .eq('user_id', resetToken.user_id);
-
-      res.json({
-        success: true,
-        message: '✅ تم إعادة تعيين كلمة المرور بنجاح',
-      });
-
-    } catch (error) {
-      console.error('❌ Reset password error:', error);
-      res.status(500).json({
-        success: false,
-        message: '❌ حدث خطأ أثناء إعادة تعيين كلمة المرور',
-        error: error.message,
-      });
-    }
-  },
-
-  // ============================================
-  // REFRESH TOKEN
+  // 🔄 REFRESH TOKEN
   // ============================================
   refreshToken: async (req, res) => {
     try {
       const { refreshToken } = req.body;
 
       if (!refreshToken) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ Refresh token مطلوب',
-        });
+        throw new ValidationError('⚠️ Refresh token مطلوب');
       }
 
       const supabase = getSupabaseClient();
 
-      // Validate refresh token
       const { data: tokenData } = await supabase
         .from('refresh_tokens')
         .select('*')
@@ -636,13 +429,9 @@ const authController = {
         .maybeSingle();
 
       if (!tokenData) {
-        return res.status(401).json({
-          success: false,
-          message: '⚠️ Refresh token غير صالح',
-        });
+        throw new AuthError('⚠️ Refresh token غير صالح');
       }
 
-      // Get user
       const { data: user } = await supabase
         .from('users')
         .select('*')
@@ -650,22 +439,16 @@ const authController = {
         .single();
 
       if (!user) {
-        return res.status(401).json({
-          success: false,
-          message: '⚠️ المستخدم غير موجود',
-        });
+        throw new NotFoundError('المستخدم');
       }
 
-      // Delete old refresh token
       await supabase
         .from('refresh_tokens')
         .delete()
         .eq('id', tokenData.id);
 
-      // Generate new tokens
       const { accessToken, refreshToken: newRefreshToken } = generateTokens(user);
 
-      // Save new refresh token
       await supabase.from('refresh_tokens').insert({
         user_id: user.id,
         token: newRefreshToken,
@@ -683,16 +466,15 @@ const authController = {
 
     } catch (error) {
       console.error('❌ Refresh token error:', error);
-      res.status(500).json({
+      res.status(error.statusCode || 500).json({
         success: false,
-        message: '❌ حدث خطأ أثناء تحديث التوكن',
-        error: error.message,
+        message: error.message || '❌ حدث خطأ أثناء تحديث التوكن',
       });
     }
   },
 
   // ============================================
-  // LOGOUT
+  // 🚪 LOGOUT
   // ============================================
   logout: async (req, res) => {
     try {
@@ -700,7 +482,6 @@ const authController = {
 
       if (userId) {
         const supabase = getSupabaseClient();
-        // Delete refresh tokens
         await supabase
           .from('refresh_tokens')
           .delete()
@@ -717,13 +498,12 @@ const authController = {
       res.status(500).json({
         success: false,
         message: '❌ حدث خطأ أثناء تسجيل الخروج',
-        error: error.message,
       });
     }
   },
 
   // ============================================
-  // GET CURRENT USER
+  // 👤 GET ME
   // ============================================
   getMe: async (req, res) => {
     try {
@@ -737,10 +517,7 @@ const authController = {
         .single();
 
       if (error || !user) {
-        return res.status(404).json({
-          success: false,
-          message: '⚠️ المستخدم غير موجود',
-        });
+        throw new NotFoundError('المستخدم');
       }
 
       delete user.password;
@@ -752,16 +529,15 @@ const authController = {
 
     } catch (error) {
       console.error('❌ Get me error:', error);
-      res.status(500).json({
+      res.status(error.statusCode || 500).json({
         success: false,
-        message: '❌ حدث خطأ أثناء جلب بيانات المستخدم',
-        error: error.message,
+        message: error.message || '❌ حدث خطأ أثناء جلب بيانات المستخدم',
       });
     }
   },
 
   // ============================================
-  // UPDATE CURRENT USER
+  // ✏️ UPDATE ME
   // ============================================
   updateMe: async (req, res) => {
     try {
@@ -769,13 +545,11 @@ const authController = {
       const updates = req.body;
       const supabase = getSupabaseClient();
 
-      // Remove sensitive fields
       delete updates.id;
       delete updates.password;
       delete updates.created_at;
       delete updates.updated_at;
 
-      // Update user
       const { data: user, error } = await supabase
         .from('users')
         .update({
@@ -787,11 +561,7 @@ const authController = {
         .single();
 
       if (error) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ فشل تحديث البيانات',
-          error: error.message,
-        });
+        throw new AppError('⚠️ فشل تحديث البيانات', 400, 'UPDATE_ERROR');
       }
 
       delete user.password;
@@ -804,16 +574,15 @@ const authController = {
 
     } catch (error) {
       console.error('❌ Update me error:', error);
-      res.status(500).json({
+      res.status(error.statusCode || 500).json({
         success: false,
-        message: '❌ حدث خطأ أثناء تحديث البيانات',
-        error: error.message,
+        message: error.message || '❌ حدث خطأ أثناء تحديث البيانات',
       });
     }
   },
 
   // ============================================
-  // CHANGE PASSWORD
+  // 🔑 CHANGE PASSWORD
   // ============================================
   changePassword: async (req, res) => {
     try {
@@ -822,20 +591,13 @@ const authController = {
       const supabase = getSupabaseClient();
 
       if (!currentPassword || !newPassword) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ كلمة المرور الحالية والجديدة مطلوبة',
-        });
+        throw new ValidationError('⚠️ كلمة المرور الحالية والجديدة مطلوبة');
       }
 
       if (newPassword.length < 6) {
-        return res.status(400).json({
-          success: false,
-          message: '⚠️ كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل',
-        });
+        throw new ValidationError('⚠️ كلمة المرور الجديدة يجب أن تكون 6 أحرف على الأقل');
       }
 
-      // Get current user
       const { data: user } = await supabase
         .from('users')
         .select('password')
@@ -843,25 +605,16 @@ const authController = {
         .single();
 
       if (!user) {
-        return res.status(404).json({
-          success: false,
-          message: '⚠️ المستخدم غير موجود',
-        });
+        throw new NotFoundError('المستخدم');
       }
 
-      // Verify current password
       const isPasswordValid = await comparePassword(currentPassword, user.password);
       if (!isPasswordValid) {
-        return res.status(401).json({
-          success: false,
-          message: '⚠️ كلمة المرور الحالية غير صحيحة',
-        });
+        throw new AuthError('⚠️ كلمة المرور الحالية غير صحيحة');
       }
 
-      // Hash new password
       const hashedPassword = await hashPassword(newPassword);
 
-      // Update password
       await supabase
         .from('users')
         .update({
@@ -870,7 +623,6 @@ const authController = {
         })
         .eq('id', userId);
 
-      // Delete all refresh tokens
       await supabase
         .from('refresh_tokens')
         .delete()
@@ -883,10 +635,123 @@ const authController = {
 
     } catch (error) {
       console.error('❌ Change password error:', error);
-      res.status(500).json({
+      res.status(error.statusCode || 500).json({
         success: false,
-        message: '❌ حدث خطأ أثناء تغيير كلمة المرور',
-        error: error.message,
+        message: error.message || '❌ حدث خطأ أثناء تغيير كلمة المرور',
+      });
+    }
+  },
+
+  // ============================================
+  // 🔐 FORGOT PASSWORD
+  // ============================================
+  forgotPassword: async (req, res) => {
+    try {
+      const { email } = req.body;
+
+      if (!email) {
+        throw new ValidationError('⚠️ البريد الإلكتروني مطلوب');
+      }
+
+      const supabase = getSupabaseClient();
+
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .maybeSingle();
+
+      if (!user) {
+        throw new NotFoundError('المستخدم');
+      }
+
+      const resetToken = generateOTP();
+      await supabase.from('verification_tokens').insert({
+        email: email,
+        token: resetToken,
+        type: 'password_reset',
+        expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        is_used: false,
+        created_at: new Date().toISOString(),
+      });
+
+      await emailService.sendPasswordResetEmail(email, resetToken);
+
+      res.json({
+        success: true,
+        message: '✅ تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني',
+      });
+
+    } catch (error) {
+      console.error('❌ Forgot password error:', error);
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || '❌ حدث خطأ أثناء إرسال رابط إعادة التعيين',
+      });
+    }
+  },
+
+  // ============================================
+  // 🔄 RESET PASSWORD
+  // ============================================
+  resetPassword: async (req, res) => {
+    try {
+      const { email, token, newPassword } = req.body;
+
+      if (!email || !token || !newPassword) {
+        throw new ValidationError('⚠️ جميع الحقول مطلوبة');
+      }
+
+      if (newPassword.length < 6) {
+        throw new ValidationError('⚠️ كلمة المرور يجب أن تكون 6 أحرف على الأقل');
+      }
+
+      const supabase = getSupabaseClient();
+
+      const { data: resetToken, error } = await supabase
+        .from('verification_tokens')
+        .select('*')
+        .eq('email', email)
+        .eq('token', token)
+        .eq('type', 'password_reset')
+        .eq('is_used', false)
+        .gt('expires_at', new Date().toISOString())
+        .maybeSingle();
+
+      if (error || !resetToken) {
+        throw new ValidationError('❌ الرمز غير صحيح أو منتهي الصلاحية');
+      }
+
+      await supabase
+        .from('verification_tokens')
+        .update({ is_used: true })
+        .eq('id', resetToken.id);
+
+      const hashedPassword = await hashPassword(newPassword);
+
+      await supabase
+        .from('users')
+        .update({
+          password: hashedPassword,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('email', email);
+
+      await supabase
+        .from('refresh_tokens')
+        .delete()
+        .eq('user_id', resetToken.user_id);
+
+      res.json({
+        success: true,
+        message: '✅ تم إعادة تعيين كلمة المرور بنجاح',
+      });
+
+    } catch (error) {
+      console.error('❌ Reset password error:', error);
+      res.status(error.statusCode || 500).json({
+        success: false,
+        message: error.message || '❌ حدث خطأ أثناء إعادة تعيين كلمة المرور',
       });
     }
   },

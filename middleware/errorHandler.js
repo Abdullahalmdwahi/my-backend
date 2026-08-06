@@ -1,12 +1,9 @@
 // ============================================
-// 🛡️ ERROR HANDLER - تم التحديث ✅
+// 🔥 ERROR HANDLER - معالجة الأخطاء المتقدمة
 // ============================================
 
-const { error: logError } = require('../utils/logger'); // ✅ تصحيح الاستيراد
-const multer = require('multer');
-
 // ============================================
-// 🏗️ CUSTOM ERROR CLASSES
+// 🎯 CLASSES CUSTOM ERRORS
 // ============================================
 
 class AppError extends Error {
@@ -27,144 +24,94 @@ class ValidationError extends AppError {
 }
 
 class AuthError extends AppError {
-  constructor(message = '❌ غير مصرح', statusCode = 401) {
-    super(message, statusCode, 'AUTH_ERROR');
+  constructor(message) {
+    super(message, 401, 'AUTH_ERROR');
   }
 }
 
 class NotFoundError extends AppError {
-  constructor(resource = 'الموارد') {
-    super(`❌ ${resource} غير موجود`, 404, 'NOT_FOUND');
+  constructor(resource = 'المورد') {
+    super(`⚠️ ${resource} غير موجود`, 404, 'NOT_FOUND');
   }
 }
 
 class ConflictError extends AppError {
-  constructor(message = '⚠️ تعارض في البيانات') {
+  constructor(message) {
     super(message, 409, 'CONFLICT');
   }
 }
 
-class PaymentError extends AppError {
-  constructor(message = '❌ فشل الدفع') {
-    super(message, 402, 'PAYMENT_ERROR');
-  }
-}
-
 // ============================================
-// 🚨 MAIN ERROR HANDLER
+// 🎯 ERROR HANDLER MIDDLEWARE
 // ============================================
 
-function errorHandler(err, req, res, next) {
-  // Log error - تم التصحيح ✅
-  logError('An error occurred:', {
-    path: req.path,
-    method: req.method,
-    ip: req.ip,
-    userId: req.user?.id,
-    body: req.body,
-    stack: err.stack,
-  });
-  
-  // Default error
+const errorHandler = (err, req, res, next) => {
+  console.error(`❌ [${req.requestId || 'unknown'}] Error:`, err.message);
+
   let statusCode = err.statusCode || 500;
   let message = err.message || '❌ حدث خطأ غير متوقع';
   let code = err.code || 'INTERNAL_ERROR';
-  let errors = err.errors || null;
   
-  // Handle specific errors
-  if (err instanceof AppError) {
-    statusCode = err.statusCode;
-    message = err.message;
-    code = err.code;
-    errors = err.errors;
-  }
-  
-  // Handle Supabase errors
-  if (err.code && err.code.startsWith('PGRST')) {
-    statusCode = 400;
-    message = '⚠️ خطأ في قاعدة البيانات';
-    code = 'DATABASE_ERROR';
-  }
-  
-  // Handle JWT errors
   if (err.name === 'JsonWebTokenError') {
     statusCode = 401;
-    message = '⚠️ رمز غير صالح';
+    message = '⚠️ توكن غير صالح';
     code = 'INVALID_TOKEN';
   }
   
   if (err.name === 'TokenExpiredError') {
     statusCode = 401;
-    message = '⚠️ انتهت صلاحية الرمز';
+    message = '⏰ انتهت صلاحية التوكن';
     code = 'TOKEN_EXPIRED';
   }
   
-  // Handle Multer errors
-  if (err instanceof multer.MulterError) {
+  if (err.code && err.code.startsWith('PGRST')) {
     statusCode = 400;
-    message = `⚠️ خطأ في رفع الملف: ${err.message}`;
-    code = 'UPLOAD_ERROR';
+    message = '⚠️ خطأ في قاعدة البيانات';
+    code = err.code;
   }
   
-  // Handle validation errors
-  if (err.name === 'ValidationError') {
-    statusCode = 400;
-    message = '⚠️ بيانات غير صحيحة';
-    code = 'VALIDATION_ERROR';
-    errors = err.errors || err.details;
+  if (err.message && err.message.includes('Invalid login credentials')) {
+    statusCode = 401;
+    message = '⚠️ البريد الإلكتروني أو كلمة المرور غير صحيحة';
+    code = 'INVALID_CREDENTIALS';
   }
-  
-  // Handle duplicate key errors (PostgreSQL)
-  if (err.code === '23505') {
-    statusCode = 409;
-    message = '⚠️ هذه البيانات موجودة مسبقاً';
-    code = 'DUPLICATE_ENTRY';
-  }
-  
-  // Send response
+
   const response = {
     success: false,
     message,
     code,
     timestamp: new Date().toISOString(),
-    path: req.path,
+    path: req.originalUrl,
   };
-  
-  if (errors) {
-    response.errors = errors;
-  }
   
   if (process.env.NODE_ENV !== 'production') {
     response.stack = err.stack;
+    response.details = err.errors || err.details;
+  }
+  
+  if (req.requestId) {
+    response.requestId = req.requestId;
   }
   
   res.status(statusCode).json(response);
-}
+};
 
 // ============================================
-// 🚫 404 NOT FOUND HANDLER
+// 🎯 ASYNC WRAPPER
 // ============================================
 
-function notFoundHandler(req, res) {
-  res.status(404).json({
-    success: false,
-    message: '❌ المسار غير موجود',
-    path: req.path,
-    timestamp: new Date().toISOString(),
-  });
-}
-
-// ============================================
-// 📦 EXPORTS
-// ============================================
+const asyncHandler = (fn) => {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+};
 
 module.exports = {
   errorHandler,
-  notFoundHandler,
+  asyncHandler,
   AppError,
   ValidationError,
   AuthError,
   NotFoundError,
   ConflictError,
-  PaymentError,
 };
