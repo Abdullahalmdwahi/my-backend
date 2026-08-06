@@ -1,5 +1,5 @@
 // ============================================
-// 📧 EMAIL SERVICE - معدل ✅
+// 📧 EMAIL SERVICE - نسخة محسنة مع معالجة الأخطاء
 // ============================================
 
 const nodemailer = require('nodemailer');
@@ -13,14 +13,10 @@ class EmailService {
     this.initializeTransporter();
   }
 
-  // ============================================
-  // INITIALIZE GMAIL SMTP
-  // ============================================
   initializeTransporter() {
     try {
-      // التحقق من وجود nodemailer بشكل صحيح
       if (!nodemailer || typeof nodemailer.createTransport !== 'function') {
-        console.warn('⚠️ nodemailer.createTransport غير متوفر، سيتم استخدام وضع المحاكاة');
+        console.warn('⚠️ nodemailer.createTransport غير متوفر');
         this.transporter = null;
         return;
       }
@@ -36,8 +32,12 @@ class EmailService {
         tls: {
           rejectUnauthorized: false,
         },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000,
       });
 
+      this.verifyConnection();
       console.log('✅ Email Service initialized with Gmail');
     } catch (error) {
       console.error('❌ فشل تهيئة خدمة البريد:', error.message);
@@ -45,20 +45,23 @@ class EmailService {
     }
   }
 
-  // ============================================
-  // SEND EMAIL
-  // ============================================
-  async sendEmail({
-    to,
-    subject,
-    html,
-    text,
-  }) {
-    // إذا لم يكن هناك ناقل بريد، استخدم المحاكاة
+  async verifyConnection() {
+    if (!this.transporter) return false;
+    try {
+      await this.transporter.verify();
+      console.log('✅ Gmail connection verified');
+      return true;
+    } catch (error) {
+      console.error('❌ Gmail connection failed:', error.message);
+      this.transporter = null;
+      return false;
+    }
+  }
+
+  async sendEmail({ to, subject, html, text }) {
     if (!this.transporter) {
       console.log(`📧 [محاكاة] إرسال بريد إلى: ${to}`);
-      console.log(`📝 الموضوع: ${subject}`);
-      console.log(`📄 المحتوى: ${html ? 'HTML' : text || 'نص'}`);
+      console.log(`📌 الموضوع: ${subject}`);
       return { 
         success: true, 
         messageId: `mock-${Date.now()}`,
@@ -75,82 +78,49 @@ class EmailService {
         text: text || html.replace(/<[^>]*>/g, ''),
       };
 
-      const info = await this.transporter.sendMail(mailOptions);
+      const info = await Promise.race([
+        this.transporter.sendMail(mailOptions),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Email timeout')), 15000)
+        )
+      ]);
+
       console.log(`✅ Email sent to ${to}: ${info.messageId}`);
       return { success: true, messageId: info.messageId };
     } catch (error) {
       console.error(`❌ Failed to send email to ${to}:`, error.message);
-      return { success: false, error: error.message };
+      return { success: false, error: error.message, simulated: true };
     }
   }
 
-  // ============================================
-  // SEND VERIFICATION EMAIL
-  // ============================================
   async sendVerificationEmail(email, code) {
     const subject = '🔐 رمز التحقق - Sell In';
     const html = this.buildVerificationEmailHtml(code);
     const text = this.buildVerificationEmailText(code);
-
-    return await this.sendEmail({
-      to: email,
-      subject,
-      html,
-      text,
-    });
+    return await this.sendEmail({ to: email, subject, html, text });
   }
 
-  // ============================================
-  // SEND PASSWORD RESET EMAIL
-  // ============================================
   async sendPasswordResetEmail(email, token) {
     const subject = '🔑 إعادة تعيين كلمة المرور - Sell In';
     const html = this.buildPasswordResetEmailHtml(token);
     const text = this.buildPasswordResetEmailText(token);
-
-    return await this.sendEmail({
-      to: email,
-      subject,
-      html,
-      text,
-    });
+    return await this.sendEmail({ to: email, subject, html, text });
   }
 
-  // ============================================
-  // SEND DEVICE VERIFICATION EMAIL
-  // ============================================
   async sendDeviceVerificationEmail(email, code) {
     const subject = '📱 تأكيد جهاز جديد - Sell In';
     const html = this.buildDeviceVerificationEmailHtml(code);
     const text = this.buildDeviceVerificationEmailText(code);
-
-    return await this.sendEmail({
-      to: email,
-      subject,
-      html,
-      text,
-    });
+    return await this.sendEmail({ to: email, subject, html, text });
   }
 
-  // ============================================
-  // SEND WELCOME EMAIL
-  // ============================================
   async sendWelcomeEmail(email, userName) {
     const subject = '🎉 مرحباً بك في Sell In!';
     const html = this.buildWelcomeEmailHtml(userName);
     const text = this.buildWelcomeEmailText(userName);
-
-    return await this.sendEmail({
-      to: email,
-      subject,
-      html,
-      text,
-    });
+    return await this.sendEmail({ to: email, subject, html, text });
   }
 
-  // ============================================
-  // HTML TEMPLATES
-  // ============================================
   buildVerificationEmailHtml(code) {
     return `
     <!DOCTYPE html>
@@ -188,7 +158,7 @@ class EmailService {
             <p style="margin: 0; color: #E65100; font-weight: bold;">⚠️ تنبيهات هامة:</p>
             <ul style="margin: 10px 0 0; padding-right: 20px; font-size: 13px;">
               <li>لا تشارك هذا الرمز مع أي شخص</li>
-              <li>إذا لم تقم بطلب هذا الرمز، يرجى تجاهل هذه الرسالة</li>
+              <li>إذا لم تقدم بطلب هذا الرمز، يرجى تجاهل هذه الرسالة</li>
               <li>لأي استفسار، تواصل مع الدعم الفني</li>
             </ul>
           </div>
@@ -216,7 +186,7 @@ class EmailService {
     
     ⚠️ تنبيهات هامة:
     - لا تشارك هذا الرمز مع أي شخص
-    - إذا لم تقم بطلب هذا الرمز، يرجى تجاهل هذه الرسالة
+    - إذا لم تقدم بطلب هذا الرمز، يرجى تجاهل هذه الرسالة
     
     © ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة
     `;
@@ -372,8 +342,8 @@ class EmailService {
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f5f5f5; padding: 20px; }
         .container { max-width: 600px; margin: 0 auto; background: white; border-radius: 16px; padding: 30px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
         .header { background: linear-gradient(135deg, #7F1D1D, #991B1B); color: white; padding: 20px; border-radius: 16px 16px 0 0; text-align: center; margin: -30px -30px 0 -30px; }
-        .footer { text-align: center; color: #999; font-size: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; }
         .feature { background: #f0f7ff; padding: 12px; border-radius: 8px; margin: 8px 0; }
+        .footer { text-align: center; color: #999; font-size: 12px; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; }
       </style>
     </head>
     <body>
@@ -389,7 +359,7 @@ class EmailService {
           <div style="background: #f0f7ff; padding: 16px; border-radius: 12px; margin: 16px 0;">
             <h3 style="color: #7F1D1D; margin: 0 0 8px 0;">🌟 مميزات التطبيق:</h3>
             <div class="feature">📦 نشر إعلاناتك بسهولة</div>
-            <div class="feature">💰 دفع آمن عبر محافظ إلكترونية</div>
+            <div class="feature">💳 دفع آمن عبر محافظ إلكترونية</div>
             <div class="feature">📱 متابعة طلباتك ومشترياتك</div>
             <div class="feature">⭐ تقييم البائعين والمشترين</div>
           </div>
@@ -419,7 +389,7 @@ class EmailService {
     
     مميزات التطبيق:
     📦 نشر إعلاناتك بسهولة
-    💰 دفع آمن عبر محافظ إلكترونية
+    💳 دفع آمن عبر محافظ إلكترونية
     📱 متابعة طلباتك ومشترياتك
     ⭐ تقييم البائعين والمشترين
     

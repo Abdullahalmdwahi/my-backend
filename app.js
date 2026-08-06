@@ -18,6 +18,10 @@ const { securityHeaders, sanitizeBody, validateContentType } = require('./middle
 const { requestLogger, performanceLogger } = require('./middleware/logger');
 const apiRoutes = require('./routes/api');
 
+// ✅ استيراد Socket.IO
+const { initSocket } = require('./socket/auctionSocket');
+const { initTicketSocket } = require('./socket/ticketSocket');
+
 const app = express();
 
 // ============================================
@@ -272,13 +276,33 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // ============================================
-// 🚀 START SERVER - بدون Socket.IO
+// 🚀 START SERVER مع دعم Socket.IO
 // ============================================
 
 const PORT = process.env.PORT || 3000;
 
-// ✅ استخدام app.listen فقط (بدون Socket.IO)
-const server = app.listen(PORT, () => {
+// ✅ إنشاء خادم HTTP مع دعم Socket.IO
+const http = require('http');
+const server = http.createServer(app);
+
+// ✅ تهيئة Auction Socket
+try {
+  initSocket(server);
+  console.log('✅ Auction Socket.IO initialized');
+} catch (error) {
+  console.warn('⚠️ Auction Socket initialization skipped:', error.message);
+}
+
+// ✅ تهيئة Ticket Socket
+try {
+  initTicketSocket(server);
+  console.log('✅ Ticket Socket.IO initialized');
+} catch (error) {
+  console.warn('⚠️ Ticket Socket initialization skipped:', error.message);
+}
+
+// ✅ تشغيل الخادم
+server.listen(PORT, () => {
   console.log('═'.repeat(50));
   console.log('🚀 Sell In API Server');
   console.log('═'.repeat(50));
@@ -288,12 +312,14 @@ const server = app.listen(PORT, () => {
   console.log(`📚 Docs: http://localhost:${PORT}/api/docs`);
   console.log(`🏥 Health: http://localhost:${PORT}/health`);
   console.log('═'.repeat(50));
-  console.log('✅ Server is running and stable');
 });
 
 // ============================================
 // 🛑 GRACEFUL SHUTDOWN
 // ============================================
+
+process.removeAllListeners('SIGTERM');
+process.removeAllListeners('SIGINT');
 
 process.on('SIGTERM', () => {
   console.log('🛑 Received SIGTERM, shutting down gracefully...');
@@ -310,5 +336,7 @@ process.on('SIGINT', () => {
     process.exit(0);
   });
 });
+
+console.log('✅ Server is ready and will stay running');
 
 module.exports = app;
