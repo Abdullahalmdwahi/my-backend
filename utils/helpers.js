@@ -168,7 +168,9 @@ function formatPrice(price, currency = 'YER') {
   };
   
   const symbol = symbols[currency] || currency;
-  const formatted = Number(price).toFixed(2);
+  // ✅ إصلاح: تحويل آمن إلى Number
+  const numericPrice = typeof price === 'string' ? parseFloat(price) : price;
+  const formatted = Number(numericPrice).toFixed(2);
   
   if (currency === 'YER') {
     return `${formatted} ${symbol}`;

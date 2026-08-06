@@ -1,5 +1,5 @@
 // ============================================
-// 🚀 SERVER - معدل ✅
+// 🚀 SERVER - تم التحديث ✅
 // ============================================
 
 const express = require('express');
@@ -13,16 +13,17 @@ const http = require('http');
 // Load environment variables
 dotenv.config();
 
-// Import modules
-const { getDatabase } = require('./config/database');
-const { getSupabaseClient } = require('./config/supabase');
-const apiRoutes = require('./routes/api');
-const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
-const { limiter } = require('./middleware/rateLimit');
-const { securityHeaders, sanitizeBody } = require('./middleware/security');
-const { scheduleAuctionEnd } = require('./cron/endAuctions');
-const { scheduleCleanup } = require('./cron/cleanup');
-const { initSocket } = require('./socket/auctionSocket');
+// Import modules - تم تصحيح المسارات ✅
+const { getDatabase } = require('../config/database'); // ✅ من services إلى config
+const { getSupabaseClient } = require('../config/supabase'); // ✅ من services إلى config
+const apiRoutes = require('../routes/api');
+const ticketRoutes = require('../routes/tickets');
+const { errorHandler, notFoundHandler } = require('../middleware/errorHandler');
+const { limiter } = require('../middleware/rateLimit');
+const { securityHeaders, sanitizeBody } = require('../middleware/security');
+const { scheduleAuctionEnd } = require('../cron/endAuctions');
+const { scheduleCleanup } = require('../cron/cleanup');
+const { initSocket } = require('../socket/auctionSocket'); // ✅ من services إلى socket
 
 // ============================================
 // CREATE EXPRESS APP
@@ -79,6 +80,9 @@ app.use((req, res, next) => {
 
 // API Routes
 app.use('/api', apiRoutes);
+
+// Ticket Routes
+app.use('/api', ticketRoutes);
 
 // Health Check
 app.get('/health', (req, res) => {

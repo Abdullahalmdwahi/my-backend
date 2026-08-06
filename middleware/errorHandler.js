@@ -1,7 +1,13 @@
+// ============================================
+// 🛡️ ERROR HANDLER - تم التحديث ✅
+// ============================================
 
+const { error: logError } = require('../utils/logger'); // ✅ تصحيح الاستيراد
+const multer = require('multer');
 
-const { logError } = require('../utils/logger');
-
+// ============================================
+// 🏗️ CUSTOM ERROR CLASSES
+// ============================================
 
 class AppError extends Error {
   constructor(message, statusCode = 500, code = 'INTERNAL_ERROR') {
@@ -27,7 +33,7 @@ class AuthError extends AppError {
 }
 
 class NotFoundError extends AppError {
-  constructor(resource = 'المورد') {
+  constructor(resource = 'الموارد') {
     super(`❌ ${resource} غير موجود`, 404, 'NOT_FOUND');
   }
 }
@@ -44,16 +50,19 @@ class PaymentError extends AppError {
   }
 }
 
-
+// ============================================
+// 🚨 MAIN ERROR HANDLER
+// ============================================
 
 function errorHandler(err, req, res, next) {
-  // Log error
-  logError(err, {
+  // Log error - تم التصحيح ✅
+  logError('An error occurred:', {
     path: req.path,
     method: req.method,
     ip: req.ip,
     userId: req.user?.id,
     body: req.body,
+    stack: err.stack,
   });
   
   // Default error
@@ -132,7 +141,9 @@ function errorHandler(err, req, res, next) {
   res.status(statusCode).json(response);
 }
 
-
+// ============================================
+// 🚫 404 NOT FOUND HANDLER
+// ============================================
 
 function notFoundHandler(req, res) {
   res.status(404).json({
@@ -143,6 +154,9 @@ function notFoundHandler(req, res) {
   });
 }
 
+// ============================================
+// 📦 EXPORTS
+// ============================================
 
 module.exports = {
   errorHandler,

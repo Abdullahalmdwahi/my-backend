@@ -167,6 +167,19 @@ class NotificationModel {
     return data;
   }
   
+  // ✅ دالة sendToSpecificUser للتكامل مع ticketController
+  static async sendToSpecificUser({ userId, title, body, data = {} }) {
+    return this.create({
+      user_id: userId,
+      title,
+      body,
+      data,
+      type: 'general',
+      is_read: false,
+      created_at: new Date().toISOString(),
+    });
+  }
+  
   // ============================================
   // ✏️ UPDATE METHODS
   // ============================================

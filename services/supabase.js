@@ -1,8 +1,9 @@
 // ============================================
-// 🗄️ خدمة الاتصال بـ Supabase
+// 🗄️ SUPABASE SERVICE - تم التحديث ✅
 // ============================================
 
 const { createClient } = require('@supabase/supabase-js');
+const { v4: uuidv4 } = require('uuid'); // ✅ إضافة UUID
 
 // ✅ قراءة المتغيرات البيئية
 const supabaseUrl = process.env.SUPABASE_URL;
@@ -92,8 +93,55 @@ async function deleteData(table, id, idField = 'id') {
 }
 
 // ============================================
-// 👤 دوال خاصة بالمستخدمين
+// 👤 USER FUNCTIONS - تم التحديث ✅
 // ============================================
+
+async function createUser(userData) {
+  try {
+    // ✅ التأكد من وجود UUID صالح
+    if (!userData.id || !isValidUUID(userData.id)) {
+      userData.id = uuidv4();
+    }
+    
+    // ✅ التأكد من وجود بيانات مطلوبة
+    if (!userData.email) {
+      return { success: false, error: '❌ البريد الإلكتروني مطلوب' };
+    }
+    
+    if (!userData.name) {
+      return { success: false, error: '❌ الاسم مطلوب' };
+    }
+    
+    // ✅ إضافة الطابع الزمني
+    const now = new Date().toISOString();
+    userData.created_at = userData.created_at || now;
+    userData.updated_at = userData.updated_at || now;
+    
+    // ✅ التأكد من أن specializations مصفوفة
+    if (userData.specializations && !Array.isArray(userData.specializations)) {
+      userData.specializations = [userData.specializations];
+    }
+    
+    const { data, error } = await supabase
+      .from('users')
+      .insert([userData])
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return { success: true, data };
+  } catch (error) {
+    console.error(`❌ فشل إنشاء المستخدم:`, error.message);
+    return { success: false, error: error.message };
+  }
+}
+
+// ✅ دالة التحقق من UUID
+function isValidUUID(id) {
+  if (!id || typeof id !== 'string') return false;
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(id);
+}
 
 async function getUserByEmail(email) {
   try {
@@ -129,6 +177,9 @@ async function getUserById(id) {
 
 async function updateUser(id, userData) {
   try {
+    // ✅ إضافة updated_at
+    userData.updated_at = new Date().toISOString();
+    
     const { data, error } = await supabase
       .from('users')
       .update(userData)
@@ -179,7 +230,10 @@ async function updateUserSpecializations(userId, specializations) {
   try {
     const { data, error } = await supabase
       .from('users')
-      .update({ specializations })
+      .update({ 
+        specializations,
+        updated_at: new Date().toISOString()
+      })
       .eq('id', userId)
       .select()
       .single();
@@ -440,6 +494,10 @@ async function checkDevice(userId, deviceId) {
   }
 }
 
+// ============================================
+// 📤 EXPORTS
+// ============================================
+
 module.exports = {
   supabase,
   supabaseAdmin,
@@ -447,6 +505,8 @@ module.exports = {
   insertData,
   updateData,
   deleteData,
+  createUser,
+  isValidUUID,
   getUserByEmail,
   getUserById,
   updateUser,

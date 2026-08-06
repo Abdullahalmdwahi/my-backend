@@ -1,5 +1,3 @@
-
-
 const Joi = require('joi');
 const { sanitizeInput } = require('../utils/helpers');
 
@@ -163,6 +161,54 @@ const schemas = {
     productId: Joi.string().optional(),
     imageUrl: Joi.string().uri().optional(),
     data: Joi.object().optional(),
+  }),
+
+  // ============================================
+  // ✅ مخططات التحقق للشكاوى
+  // ============================================
+
+  createTicket: Joi.object({
+    subject: Joi.string().min(3).max(200).required().messages({
+      'string.min': '⚠️ العنوان يجب أن يكون 3 أحرف على الأقل',
+      'string.max': '⚠️ العنوان يجب أن لا يتجاوز 200 حرف',
+      'any.required': '⚠️ العنوان مطلوب',
+    }),
+    description: Joi.string().min(10).max(2000).required().messages({
+      'string.min': '⚠️ الوصف يجب أن يكون 10 أحرف على الأقل',
+      'string.max': '⚠️ الوصف يجب أن لا يتجاوز 2000 حرف',
+      'any.required': '⚠️ الوصف مطلوب',
+    }),
+    priority: Joi.string().valid('low', 'medium', 'high', 'urgent').default('medium'),
+  }),
+
+  updateTicketStatus: Joi.object({
+    status: Joi.string().valid('open', 'inProgress', 'resolved', 'closed').required(),
+    notes: Joi.string().max(500).optional(),
+  }),
+
+  addTicketMessage: Joi.object({
+    message: Joi.string().max(2000).optional(),
+    imageUrl: Joi.string().uri().optional(),
+  }).or('message', 'imageUrl'),
+
+  adminUpdateTicket: Joi.object({
+    status: Joi.string().valid('open', 'inProgress', 'resolved', 'closed').optional(),
+    priority: Joi.string().valid('low', 'medium', 'high', 'urgent').optional(),
+    adminNotes: Joi.string().max(500).optional(),
+  }),
+
+  assignTicket: Joi.object({
+    adminId: Joi.string().required(),
+  }),
+
+  updateContactInfo: Joi.object({
+    phone: Joi.string().optional(),
+    whatsapp: Joi.string().optional(),
+    email: Joi.string().email().optional(),
+    working_hours_ar: Joi.string().optional(),
+    working_hours_en: Joi.string().optional(),
+    support_text_ar: Joi.string().optional(),
+    support_text_en: Joi.string().optional(),
   }),
 };
 
