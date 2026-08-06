@@ -30,10 +30,9 @@ if (!fs.existsSync(logDir)) {
 }
 
 // ============================================
-// 🛡️ SECURITY MIDDLEWARES (الترتيب مهم)
+// 🛡️ SECURITY MIDDLEWARES
 // ============================================
 
-// 1. Helmet - حماية الرؤوس
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -45,12 +44,10 @@ app.use(helmet({
   },
 }));
 
-// 2. Security Headers المخصصة
 app.use(securityHeaders);
 
-// 3. CORS - محسّن
 app.use(cors({
-  origin: process.env.CORS_ORIGIN ? process.env.CORS_ORIGIN.split(',') : '*',
+  origin: '*',
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
@@ -58,13 +55,11 @@ app.use(cors({
   maxAge: 86400,
 }));
 
-// 4. Compression
 app.use(compression({
   level: 6,
   threshold: 1024,
 }));
 
-// 5. Body Parsers
 app.use(bodyParser.json({ 
   limit: '50mb',
   verify: (req, res, buf) => {
@@ -79,9 +74,10 @@ app.use(bodyParser.json({
     }
   }
 }));
+
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
-// 6. Logging
+// Logging
 if (process.env.NODE_ENV === 'production') {
   app.use(morgan('combined', {
     stream: fs.createWriteStream(path.join(logDir, 'access.log'), { flags: 'a' }),
@@ -92,25 +88,11 @@ if (process.env.NODE_ENV === 'production') {
 app.use(requestLogger);
 app.use(performanceLogger);
 
-// 7. التحقق من Content-Type
 app.use(validateContentType);
-
-// 8. Rate Limiting
 app.use('/api', limiter);
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', strictLimiter);
-
-// 9. تنظيف المدخلات
 app.use(sanitizeBody);
-
-// 10. معالجة الاستثناءات
-process.on('uncaughtException', (error) => {
-  console.error('🔥 Uncaught Exception:', error);
-});
-
-process.on('unhandledRejection', (reason, promise) => {
-  console.error('🔥 Unhandled Rejection:', reason);
-});
 
 // ============================================
 // 📂 STATIC FILES
@@ -122,7 +104,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
 app.use('/temp', express.static(path.join(__dirname, 'temp')));
 
 // ============================================
-// 🌐 الصفحة الرئيسية - مرحباً بك في Sell In API
+// 🌐 الصفحة الرئيسية
 // ============================================
 
 app.get('/', (req, res) => {
@@ -186,7 +168,6 @@ app.get('/', (req, res) => {
   });
 });
 
-// ✅ صفحة التوثيق البسيطة
 app.get('/api/docs', (req, res) => {
   res.json({
     success: true,
@@ -219,7 +200,6 @@ app.get('/api/docs', (req, res) => {
   });
 });
 
-// ✅ مسار إضافي للتحقق من صحة الخادم
 app.get('/api/status', (req, res) => {
   res.json({
     success: true,
@@ -292,10 +272,12 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // ============================================
-// 🚀 START SERVER
+// 🚀 START SERVER - بدون Socket.IO مؤقتاً
 // ============================================
 
 const PORT = process.env.PORT || 3000;
+
+// إنشاء خادم HTTP بسيط بدون Socket.IO
 const server = app.listen(PORT, () => {
   console.log('═'.repeat(50));
   console.log('🚀 Sell In API Server');
@@ -309,22 +291,30 @@ const server = app.listen(PORT, () => {
 });
 
 // ============================================
-// 🛑 GRACEFUL SHUTDOWN
+// 🛑 GRACEFUL SHUTDOWN - مع منع الإغلاق التلقائي
 // ============================================
 
-const shutdown = () => {
-  console.log('🛑 Shutting down gracefully...');
+// إزالة معالج الإغلاق التلقائي
+process.removeAllListeners('SIGTERM');
+process.removeAllListeners('SIGINT');
+
+// معالج إغلاق يدوي فقط
+process.on('SIGTERM', () => {
+  console.log('🛑 Received SIGTERM, shutting down gracefully...');
   server.close(() => {
     console.log('✅ Server closed');
     process.exit(0);
   });
-  setTimeout(() => {
-    console.error('⚠️ Force shutdown after 10s');
-    process.exit(1);
-  }, 10000);
-};
+});
 
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+process.on('SIGINT', () => {
+  console.log('🛑 Received SIGINT, shutting down gracefully...');
+  server.close(() => {
+    console.log('✅ Server closed');
+    process.exit(0);
+  });
+});
+
+console.log('✅ Server is ready and will stay running');
 
 module.exports = app;
