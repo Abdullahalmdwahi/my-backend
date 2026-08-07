@@ -1,5 +1,5 @@
 // ============================================
-// 📧 EMAIL SERVICE - النسخة المُصلحة
+// 📧 EMAIL SERVICE - النسخة المُصلحة بالكامل
 // ============================================
 
 const nodemailer = require('nodemailer');
@@ -17,10 +17,13 @@ class EmailService {
 
   initializeTransporter() {
     try {
+      // ✅ إعدادات Gmail مع منع IPv6
       const gmailConfig = {
         host: process.env.GMAIL_SMTP_HOST || 'smtp.gmail.com',
         port: parseInt(process.env.GMAIL_SMTP_PORT || '587'),
         secure: false,
+        // ✅ منع IPv6
+        family: 4,
         auth: {
           user: process.env.GMAIL_EMAIL,
           pass: process.env.GMAIL_APP_PASSWORD ? process.env.GMAIL_APP_PASSWORD.replace(/\s/g, '') : '',
@@ -29,9 +32,10 @@ class EmailService {
           rejectUnauthorized: false,
           ciphers: 'SSLv3',
         },
-        connectionTimeout: 15000,
-        greetingTimeout: 15000,
-        socketTimeout: 15000,
+        // ✅ تحسين المهلات
+        connectionTimeout: 30000,
+        greetingTimeout: 30000,
+        socketTimeout: 30000,
       };
 
       console.log('📧 محاولة الاتصال بـ Gmail SMTP...');
@@ -39,6 +43,8 @@ class EmailService {
       console.log(`📧 User: ${gmailConfig.auth.user}`);
 
       this.transporter = nodemailer.createTransport(gmailConfig);
+      
+      // ✅ التحقق من الاتصال بشكل غير متزامن
       this.verifyConnection();
       console.log('✅ Email Service initialized with Gmail');
     } catch (error) {
@@ -70,11 +76,13 @@ class EmailService {
   // ============================================
 
   async sendEmail({ to, subject, html, text, requireAuth = false }) {
+    // ✅ إذا كان requireAuth = false، نرسل عبر API بدون مصادقة
     if (!requireAuth) {
       console.log(`📧 [بدون مصادقة] إرسال بريد إلى: ${to}`);
       return await this.sendViaApi(to, subject, html, text, false);
     }
 
+    // ✅ إذا كان requireAuth = true، نحاول إرسال عبر SMTP أولاً
     if (this.transporter) {
       try {
         const mailOptions = {
@@ -86,10 +94,12 @@ class EmailService {
         };
 
         console.log(`📧 جاري إرسال بريد إلى ${to}...`);
+        
+        // ✅ زيادة المهلة إلى 30 ثانية
         const info = await Promise.race([
           this.transporter.sendMail(mailOptions),
           new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Email timeout after 15 seconds')), 15000)
+            setTimeout(() => reject(new Error('Email timeout after 30 seconds')), 30000)
           )
         ]);
 
@@ -97,10 +107,12 @@ class EmailService {
         return { success: true, messageId: info.messageId };
       } catch (error) {
         console.error(`❌ Failed to send email to ${to}:`, error.message);
+        // ✅ في حالة الفشل، نحاول عبر API
         return await this.sendViaApi(to, subject, html, text, true);
       }
     }
 
+    // ✅ إذا لم يكن هناك SMTP، نرسل عبر API
     return await this.sendViaApi(to, subject, html, text, requireAuth);
   }
 
@@ -133,7 +145,7 @@ class EmailService {
       const response = await axios.post(
         `${this.apiBaseUrl}/api/email/send`,
         payload,
-        { headers }
+        { headers, timeout: 30000 }
       );
 
       if (response.data && response.data.success) {
@@ -146,15 +158,19 @@ class EmailService {
     } catch (error) {
       console.error(`❌ [API] خطأ في إرسال البريد:`, error.message);
       
-      console.log(`📧 [محاكاة] إرسال بريد إلى: ${to}`);
-      console.log(`📧 الموضوع: ${subject}`);
+      // ✅ محاكاة الإرسال في حالة الفشل (للاختبار فقط)
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`📧 [محاكاة] إرسال بريد إلى: ${to}`);
+        console.log(`📧 الموضوع: ${subject}`);
+        return { 
+          success: true, 
+          messageId: `mock-${Date.now()}`,
+          simulated: true,
+          warning: '⚠️ تم استخدام المحاكاة بسبب فشل الإرسال الفعلي'
+        };
+      }
       
-      return { 
-        success: true, 
-        messageId: `mock-${Date.now()}`,
-        simulated: true,
-        warning: '⚠️ تم استخدام المحاكاة بسبب فشل الإرسال الفعلي'
-      };
+      return { success: false, error: error.message };
     }
   }
 
@@ -195,6 +211,7 @@ class EmailService {
     const subject = '📱 جهاز جديد - Sell In';
     const html = this.buildDeviceVerificationEmailHtml(code);
     const text = this.buildDeviceVerificationEmailText(code);
+    // ✅ ✅ ✅ التحقق من الجهاز لا يحتاج مصادقة (مهم جداً)
     return await this.sendEmail({ to: email, subject, html, text, requireAuth: false });
   }
 

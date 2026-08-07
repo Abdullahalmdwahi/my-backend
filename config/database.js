@@ -1,5 +1,5 @@
 // ============================================
-// 🗄️ DATABASE CONFIGURATION
+// 🗄️ DATABASE CONFIGURATION - النسخة المُصلحة
 // ============================================
 
 const { createClient } = require('@supabase/supabase-js');
@@ -67,7 +67,7 @@ class Database {
   }
 
   // ============================================
-  // 🔢 ID HELPERS
+  // 🔢 ID HELPERS - المُضافة حديثاً
   // ============================================
 
   toSafeId(id) {
@@ -76,11 +76,13 @@ class Database {
     if (typeof id === 'number') return id;
     
     if (typeof id === 'string') {
+      // ✅ التحقق من UUID
       const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
       if (uuidRegex.test(id)) {
         return id;
       }
       
+      // ✅ محاولة التحويل إلى رقم
       const parsed = parseInt(id);
       if (!isNaN(parsed) && parsed > 0) {
         return parsed;
@@ -104,6 +106,10 @@ class Database {
 
   generateShortId() {
     return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+  }
+
+  generateIntId() {
+    return Date.now() + Math.floor(Math.random() * 1000);
   }
 
   // ============================================
