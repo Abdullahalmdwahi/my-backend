@@ -126,6 +126,7 @@ app.get('/', (req, res) => {
         register: 'POST /api/auth/register',
         login: 'POST /api/auth/login',
         verify: 'POST /api/auth/verify',
+        verifyDevice: 'POST /api/auth/verify-device',
         me: 'GET /api/auth/me',
         logout: 'POST /api/auth/logout',
       },
@@ -185,6 +186,7 @@ app.get('/api/docs', (req, res) => {
         login: 'POST /api/auth/login',
         register: 'POST /api/auth/register',
         refresh: 'POST /api/auth/refresh-token',
+        verifyDevice: 'POST /api/auth/verify-device',
       }
     },
     modules: {

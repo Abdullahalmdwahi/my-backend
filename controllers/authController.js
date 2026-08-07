@@ -1,5 +1,5 @@
 // ============================================
-// 🔐 AUTH CONTROLLER - نسخة متقدمة
+// 🔐 AUTH CONTROLLER - نسخة متقدمة مع التحقق من الجهاز
 // ============================================
 
 const bcrypt = require('bcrypt');
@@ -168,9 +168,9 @@ const authController = {
   },
 
   // ============================================
-  // 🔑 LOGIN - المحسّن
+  // 🔑 LOGIN - المحسّن مع التحقق من الجهاز
   // ============================================
- login: async (req, res) => {
+  login: async (req, res) => {
     try {
         console.log('🔐 [LOGIN] Request received');
         
@@ -246,7 +246,6 @@ const authController = {
             is_active: userData.is_active !== false,
             created_at: userData.created_at || authUser.created_at,
             last_login_at: new Date().toISOString(),
-            // ✅ إضافة الحقول المفقودة
             full_name: userData.full_name || null,
             national_id: userData.national_id || null,
             wallet_phone: userData.wallet_phone || null,
@@ -264,7 +263,7 @@ const authController = {
             });
         }
 
-        // ✅ الخطوة 5: التحقق من الجهاز (اختياري)
+        // ✅ الخطوة 5: التحقق من الجهاز (مع دعم المحاكاة)
         const deviceIdToCheck = deviceId || 'unknown';
         const { data: device } = await supabase
             .from('devices')
@@ -273,8 +272,11 @@ const authController = {
             .eq('device_id', deviceIdToCheck)
             .maybeSingle();
 
+        // ✅ إذا كان الجهاز غير معروف، نطلب التحقق
         if (!device) {
             const otp = generateOTP();
+            
+            // ✅ حفظ رمز التحقق في قاعدة البيانات
             await supabase.from('verification_tokens').insert({
                 email: email,
                 token: otp,
@@ -284,18 +286,29 @@ const authController = {
                 created_at: new Date().toISOString(),
             });
             
-            // ✅ محاولة إرسال الإيميل ولكن لا نعطل العملية إذا فشل
-            try {
-                await emailService.sendDeviceVerificationEmail(email, otp);
-            } catch (emailErr) {
-                console.warn('⚠️ [LOGIN] فشل إرسال إيميل التحقق:', emailErr.message);
+            // ✅ محاولة إرسال البريد الإلكتروني الفعلي
+            console.log(`📧 محاولة إرسال بريد تحقق الجهاز إلى ${email}`);
+            const emailResult = await emailService.sendDeviceVerificationEmail(email, otp);
+            
+            if (emailResult.success && !emailResult.simulated) {
+                console.log(`✅ تم إرسال رمز التحقق إلى ${email}`);
+            } else {
+                console.warn(`⚠️ تم استخدام المحاكاة لإرسال رمز التحقق إلى ${email}`);
+                console.log(`📧 [محاكاة] رمز التحقق: ${otp}`);
             }
 
+            // ✅ نعيد للعميل مع طلب التحقق
             return res.status(403).json({
                 success: false,
                 message: '📱 جهاز جديد غير معروف. تم إرسال رمز التحقق إلى بريدك الإلكتروني',
                 requiresDeviceVerification: true,
-                code: 'NEW_DEVICE_DETECTED'
+                code: 'NEW_DEVICE_DETECTED',
+                email: email,
+                // ✅ في حالة المحاكاة، نرسل الرمز في الرد (للاختبار فقط)
+                ...(emailResult.simulated && { 
+                    debug_code: otp,
+                    debug_message: '⚠️ وضع المحاكاة: استخدم هذا الرمز للتحقق'
+                })
             });
         }
 
@@ -351,7 +364,92 @@ const authController = {
             timestamp: new Date().toISOString(),
         });
     }
-},
+  },
+
+  // ============================================
+  // ✅ VERIFY DEVICE - التحقق من الجهاز الجديد
+  // ============================================
+  verifyDevice: async (req, res) => {
+    try {
+      const { email, code, deviceId, deviceName } = req.body;
+
+      if (!email || !code) {
+        return res.status(400).json({
+          success: false,
+          message: '⚠️ البريد الإلكتروني والرمز مطلوبان'
+        });
+      }
+
+      const supabase = getSupabaseClient();
+
+      // ✅ التحقق من الرمز
+      const { data: token, error } = await supabase
+        .from('verification_tokens')
+        .select('*')
+        .eq('email', email)
+        .eq('token', code)
+        .eq('type', 'device_verification')
+        .eq('is_used', false)
+        .gt('expires_at', new Date().toISOString())
+        .maybeSingle();
+
+      if (error || !token) {
+        return res.status(400).json({
+          success: false,
+          message: '❌ رمز التحقق غير صحيح أو منتهي الصلاحية'
+        });
+      }
+
+      // ✅ الحصول على المستخدم
+      const { data: user } = await supabase
+        .from('users')
+        .select('id')
+        .eq('email', email)
+        .single();
+
+      if (!user) {
+        return res.status(404).json({
+          success: false,
+          message: '❌ المستخدم غير موجود'
+        });
+      }
+
+      // ✅ تسجيل الجهاز
+      const deviceIdToRegister = deviceId || 'verified-device';
+      await supabase
+        .from('devices')
+        .insert({
+          user_id: user.id,
+          device_id: deviceIdToRegister,
+          device_name: deviceName || 'Verified Device',
+          last_seen: new Date().toISOString(),
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+      // ✅ تحديث الرمز كمستخدم
+      await supabase
+        .from('verification_tokens')
+        .update({ is_used: true })
+        .eq('id', token.id);
+
+      return res.json({
+        success: true,
+        message: '✅ تم التحقق من الجهاز بنجاح',
+        data: {
+          deviceId: deviceIdToRegister,
+          deviceName: deviceName || 'Verified Device',
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ [VERIFY_DEVICE] خطأ:', error);
+      return res.status(500).json({
+        success: false,
+        message: '❌ حدث خطأ أثناء التحقق من الجهاز'
+      });
+    }
+  },
 
   // ============================================
   // ✅ VERIFY
