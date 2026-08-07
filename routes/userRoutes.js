@@ -1,74 +1,82 @@
 // ============================================
-// 👤 USER ROUTES - جديد ✅
+// 📱 DEVICE ROUTES
 // ============================================
 
-const express = require('express');
-const router = express.Router();
-const userController = require('../controllers/userController');
-const { verifyToken, verifyAdmin } = require('../middleware/auth');
-const { validate, schemas } = require('../middleware/validation');
-
-// ============================================
-// PROTECTED ROUTES
-// ============================================
-
-// @route   GET /api/users/profile
-// @desc    Get user profile
+// @route   POST /api/users/device
+// @desc    تسجيل جهاز جديد
 // @access  Private
-router.get('/profile', verifyToken, userController.getProfile);
+router.post('/device', verifyToken, async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { deviceId, deviceName, fcmToken } = req.body;
 
-// @route   PUT /api/users/profile
-// @desc    Update user profile
-// @access  Private
-router.put('/profile', verifyToken, validate(schemas.updateUser), userController.updateProfile);
+    if (!deviceId) {
+      return res.status(400).json({
+        success: false,
+        message: '⚠️ deviceId مطلوب'
+      });
+    }
 
-// @route   GET /api/users/specializations
-// @desc    Get user specializations
-// @access  Private
-router.get('/specializations', verifyToken, userController.getSpecializations);
+    const supabase = getSupabaseClient();
 
-// @route   PUT /api/users/specializations
-// @desc    Update user specializations
-// @access  Private
-router.put('/specializations', verifyToken, userController.updateSpecializations);
+    // ✅ التحقق من وجود الجهاز
+    const { data: existingDevice } = await supabase
+      .from('devices')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('device_id', deviceId)
+      .maybeSingle();
 
-// @route   GET /api/users/stats
-// @desc    Get user stats
-// @access  Private
-router.get('/stats', verifyToken, userController.getStats);
+    if (existingDevice) {
+      // ✅ تحديث الجهاز الموجود
+      const { data, error } = await supabase
+        .from('devices')
+        .update({
+          device_name: deviceName || existingDevice.device_name,
+          fcm_token: fcmToken || existingDevice.fcm_token,
+          last_seen: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingDevice.id)
+        .select()
+        .single();
 
-// @route   POST /api/users/change-password
-// @desc    Change password
-// @access  Private
-router.post('/change-password', verifyToken, userController.changePassword);
+      if (error) throw error;
 
-// ============================================
-// ADMIN ROUTES
-// ============================================
+      return res.json({
+        success: true,
+        message: '✅ تم تحديث الجهاز بنجاح',
+        data
+      });
+    }
 
-// @route   GET /api/users
-// @desc    Get all users
-// @access  Admin
-router.get('/', verifyToken, verifyAdmin, userController.getAll);
+    // ✅ إدراج جهاز جديد
+    const { data, error } = await supabase
+      .from('devices')
+      .insert({
+        user_id: userId,
+        device_id: deviceId,
+        device_name: deviceName || 'Unknown Device',
+        fcm_token: fcmToken || null,
+        last_seen: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .select()
+      .single();
 
-// @route   GET /api/users/:id
-// @desc    Get user by ID
-// @access  Admin
-router.get('/:id', verifyToken, verifyAdmin, userController.getById);
+    if (error) throw error;
 
-// @route   DELETE /api/users/:id
-// @desc    Delete user
-// @access  Admin
-router.delete('/:id', verifyToken, verifyAdmin, userController.delete);
+    res.status(201).json({
+      success: true,
+      message: '✅ تم تسجيل الجهاز بنجاح',
+      data
+    });
 
-// @route   POST /api/users/:id/block
-// @desc    Block user
-// @access  Admin
-router.post('/:id/block', verifyToken, verifyAdmin, userController.block);
-
-// @route   POST /api/users/:id/unblock
-// @desc    Unblock user
-// @access  Admin
-router.post('/:id/unblock', verifyToken, verifyAdmin, userController.unblock);
-
-module.exports = router;
+  } catch (error) {
+    console.error('❌ Device registration error:', error);
+    res.status(500).json({
+      success: false,
+      message: '❌ حدث خطأ أثناء تسجيل الجهاز'
+    });
+  }
+});

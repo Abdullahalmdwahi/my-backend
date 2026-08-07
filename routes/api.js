@@ -98,4 +98,8 @@ router.get('/info', (req, res) => {
   });
 });
 
+// ❌ إزالة هذه الأسطر تماماً:
+// app.use((req, res) => { ... });
+// app.use(errorHandler);
+
 module.exports = router;
