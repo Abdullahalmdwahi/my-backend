@@ -287,9 +287,8 @@ const PORT = process.env.PORT || 3000;
 const http = require('http');
 const server = http.createServer(app);
 
-// ✅ تهيئة Auction Socket
+// ✅ تهيئة Auction Socket مع معالجة الأخطاء
 try {
-  const { initSocket } = require('./socket/auctionSocket');
   initSocket(server);
   console.log('✅ Auction Socket.IO initialized');
 } catch (error) {
@@ -298,7 +297,6 @@ try {
 
 // ✅ تهيئة Ticket Socket مع معالجة الأخطاء
 try {
-  const { initTicketSocket } = require('./socket/ticketSocket');
   initTicketSocket(server);
   console.log('✅ Ticket Socket.IO initialized');
 } catch (error) {

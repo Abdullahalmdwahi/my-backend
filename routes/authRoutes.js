@@ -1,133 +1,56 @@
 // ============================================
-// 🔌 AUCTION SOCKET - نسخة محسنة
+// 🔐 AUTH ROUTES - نسخة كاملة مع verify-device
 // ============================================
 
-const { Server } = require('socket.io');
+const express = require('express');
+const router = express.Router();
+const authController = require('../controllers/authController');
+const { verifyToken } = require('../middleware/auth');
+const { limiter, strictLimiter, registerLimiter } = require('../middleware/rateLimit');
+const { validate, schemas } = require('../middleware/validation');
 
-let io = null;
-const auctionRooms = new Map();
+// ============================================
+// PUBLIC ROUTES
+// ============================================
 
-function initSocket(server) {
-  try {
-    io = new Server(server, {
-      cors: {
-        origin: '*',
-        methods: ['GET', 'POST'],
-        credentials: true,
-      },
-      transports: ['websocket', 'polling'],
-      allowEIO3: true,
-    });
+// @route   POST /api/auth/register
+router.post('/register', registerLimiter, validate(schemas.register), authController.register);
 
-    io.on('connection', (socket) => {
-      console.log('🔌 Client connected:', socket.id);
+// @route   POST /api/auth/login
+router.post('/login', strictLimiter, validate(schemas.login), authController.login);
 
-      socket.on('join-auction', (auctionId) => {
-        if (!auctionId) return;
-        
-        socket.join(`auction-${auctionId}`);
-        
-        if (!auctionRooms.has(auctionId)) {
-          auctionRooms.set(auctionId, new Set());
-        }
-        auctionRooms.get(auctionId).add(socket.id);
-        
-        console.log(`📢 Client ${socket.id} joined auction ${auctionId}`);
-        socket.emit('auction-joined', { auctionId });
-      });
+// @route   POST /api/auth/verify
+router.post('/verify', limiter, validate(schemas.verify), authController.verify);
 
-      socket.on('leave-auction', (auctionId) => {
-        if (!auctionId) return;
-        
-        socket.leave(`auction-${auctionId}`);
-        
-        if (auctionRooms.has(auctionId)) {
-          auctionRooms.get(auctionId).delete(socket.id);
-          if (auctionRooms.get(auctionId).size === 0) {
-            auctionRooms.delete(auctionId);
-          }
-        }
-        
-        console.log(`📢 Client ${socket.id} left auction ${auctionId}`);
-      });
+// ✅ @route   POST /api/auth/verify-device - التحقق من الجهاز الجديد
+router.post('/verify-device', limiter, authController.verifyDevice);
 
-      socket.on('new-bid', async (data) => {
-        const { auctionId, bid } = data;
-        if (!auctionId || !bid) return;
-        
-        console.log(`💰 New bid in auction ${auctionId}: ${bid.amount}`);
-        io.to(`auction-${auctionId}`).emit('bid-update', {
-          auctionId,
-          bid,
-          timestamp: new Date().toISOString(),
-        });
-      });
+// @route   POST /api/auth/send-verification
+router.post('/send-verification', limiter, authController.sendVerification);
 
-      socket.on('auction-ended', (data) => {
-        const { auctionId, winner } = data;
-        if (!auctionId) return;
-        
-        console.log(`🏁 Auction ${auctionId} ended. Winner: ${winner?.userId || 'None'}`);
-        io.to(`auction-${auctionId}`).emit('auction-ended', {
-          auctionId,
-          winner,
-          timestamp: new Date().toISOString(),
-        });
-      });
+// @route   POST /api/auth/forgot-password
+router.post('/forgot-password', limiter, authController.forgotPassword);
 
-      socket.on('disconnect', () => {
-        console.log('🔌 Client disconnected:', socket.id);
-        for (const [auctionId, clients] of auctionRooms) {
-          if (clients.has(socket.id)) {
-            clients.delete(socket.id);
-            if (clients.size === 0) {
-              auctionRooms.delete(auctionId);
-            }
-          }
-        }
-      });
-    });
+// @route   POST /api/auth/reset-password
+router.post('/reset-password', limiter, validate(schemas.resetPassword), authController.resetPassword);
 
-    console.log('✅ Socket.IO initialized successfully');
-    return io;
-  } catch (error) {
-    console.error('❌ Socket.IO initialization failed:', error.message);
-    return null;
-  }
-}
+// @route   POST /api/auth/refresh-token
+router.post('/refresh-token', limiter, authController.refreshToken);
 
-function getIO() {
-  return io;
-}
+// ============================================
+// PROTECTED ROUTES
+// ============================================
 
-function broadcastBid(auctionId, bid) {
-  const socket = getIO();
-  if (!socket) return;
-  socket.to(`auction-${auctionId}`).emit('bid-update', {
-    auctionId,
-    bid,
-    timestamp: new Date().toISOString(),
-  });
-}
+// @route   POST /api/auth/logout
+router.post('/logout', verifyToken, authController.logout);
 
-function broadcastAuctionEnd(auctionId, winner) {
-  const socket = getIO();
-  if (!socket) return;
-  socket.to(`auction-${auctionId}`).emit('auction-ended', {
-    auctionId,
-    winner,
-    timestamp: new Date().toISOString(),
-  });
-}
+// @route   GET /api/auth/me
+router.get('/me', verifyToken, authController.getMe);
 
-function getAuctionRoomCount(auctionId) {
-  return auctionRooms.get(auctionId)?.size || 0;
-}
+// @route   PUT /api/auth/me
+router.put('/me', verifyToken, validate(schemas.updateUser), authController.updateMe);
 
-module.exports = {
-  initSocket,
-  getIO,
-  broadcastBid,
-  broadcastAuctionEnd,
-  getAuctionRoomCount,
-};
+// @route   POST /api/auth/change-password
+router.post('/change-password', verifyToken, authController.changePassword);
+
+module.exports = router;

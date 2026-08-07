@@ -21,7 +21,6 @@ class EmailService {
         return;
       }
 
-      // ✅ إعدادات Gmail المحسنة
       const gmailConfig = {
         host: process.env.GMAIL_SMTP_HOST || 'smtp.gmail.com',
         port: parseInt(process.env.GMAIL_SMTP_PORT || '587'),
@@ -44,10 +43,7 @@ class EmailService {
       console.log(`📧 User: ${gmailConfig.auth.user}`);
 
       this.transporter = nodemailer.createTransport(gmailConfig);
-
-      // ✅ التحقق من الاتصال فوراً
       this.verifyConnection();
-
       console.log('✅ Email Service initialized with Gmail');
     } catch (error) {
       console.error('❌ فشل تهيئة خدمة البريد:', error.message);
@@ -68,14 +64,12 @@ class EmailService {
       return true;
     } catch (error) {
       console.error('❌ Gmail connection failed:', error.message);
-      console.error('📧 تفاصيل الخطأ:', error.code || 'غير معروف');
       this.transporter = null;
       return false;
     }
   }
 
   async sendEmail({ to, subject, html, text }) {
-    // ✅ إذا لم يكن هناك ناقل بريد، استخدم المحاكاة
     if (!this.transporter) {
       console.log(`📧 [محاكاة] إرسال بريد إلى: ${to}`);
       console.log(`📌 الموضوع: ${subject}`);

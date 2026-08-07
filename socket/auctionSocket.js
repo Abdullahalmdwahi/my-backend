@@ -1,5 +1,5 @@
 // ============================================
-// 🔌 AUCTION SOCKET - تم إصلاحه بالكامل ✅
+// 🔌 AUCTION SOCKET - نسخة محسنة
 // ============================================
 
 const { Server } = require('socket.io');
@@ -22,7 +22,6 @@ function initSocket(server) {
     io.on('connection', (socket) => {
       console.log('🔌 Client connected:', socket.id);
 
-      // Join auction room
       socket.on('join-auction', (auctionId) => {
         if (!auctionId) return;
         
@@ -37,7 +36,6 @@ function initSocket(server) {
         socket.emit('auction-joined', { auctionId });
       });
 
-      // Leave auction room
       socket.on('leave-auction', (auctionId) => {
         if (!auctionId) return;
         
@@ -53,14 +51,11 @@ function initSocket(server) {
         console.log(`📢 Client ${socket.id} left auction ${auctionId}`);
       });
 
-      // New bid
       socket.on('new-bid', async (data) => {
         const { auctionId, bid } = data;
         if (!auctionId || !bid) return;
         
         console.log(`💰 New bid in auction ${auctionId}: ${bid.amount}`);
-        
-        // Broadcast to all clients in the auction room
         io.to(`auction-${auctionId}`).emit('bid-update', {
           auctionId,
           bid,
@@ -68,13 +63,11 @@ function initSocket(server) {
         });
       });
 
-      // Auction ended
       socket.on('auction-ended', (data) => {
         const { auctionId, winner } = data;
         if (!auctionId) return;
         
         console.log(`🏁 Auction ${auctionId} ended. Winner: ${winner?.userId || 'None'}`);
-        
         io.to(`auction-${auctionId}`).emit('auction-ended', {
           auctionId,
           winner,
@@ -82,11 +75,8 @@ function initSocket(server) {
         });
       });
 
-      // Disconnect
       socket.on('disconnect', () => {
         console.log('🔌 Client disconnected:', socket.id);
-        
-        // Clean up rooms
         for (const [auctionId, clients] of auctionRooms) {
           if (clients.has(socket.id)) {
             clients.delete(socket.id);
@@ -107,10 +97,6 @@ function initSocket(server) {
 }
 
 function getIO() {
-  if (!io) {
-    console.warn('⚠️ Socket.io not initialized. Call initSocket first.');
-    return null;
-  }
   return io;
 }
 
