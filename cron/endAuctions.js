@@ -3,9 +3,8 @@
 // ============================================
 
 const cron = require('node-cron');
-const { AuctionModel } = require('../models');
-const { broadcastAuctionEnd } = require('../socket/auctionSocket');
-const NotificationService = require('../services/notificationService');
+// ✅ التصحيح: استيراد النموذج بشكل صحيح
+const AuctionModel = require('../models/Auction');
 
 // ============================================
 // 🕒 جدولة المهمة كل 5 دقائق
@@ -17,13 +16,11 @@ function scheduleAuctionEnd() {
     console.log('🔄 جاري التحقق من المزادات المنتهية...');
     
     try {
+      // ✅ استخدام النموذج بشكل صحيح
       const endedCount = await AuctionModel.endExpiredAuctions();
       
       if (endedCount > 0) {
         console.log(`✅ تم إنهاء ${endedCount} مزاد منتهي`);
-        
-        // إرسال إشعارات للمزادات المنتهية
-        // (سيتم تنفيذها في الإصدار القادم)
       }
     } catch (error) {
       console.error('❌ فشل إنهاء المزادات المنتهية:', error.message);
