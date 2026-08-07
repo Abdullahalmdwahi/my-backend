@@ -203,7 +203,6 @@ class EmailService {
     const subject = '📱 جهاز جديد - Sell In';
     const html = this.buildDeviceVerificationEmailHtml(code);
     const text = this.buildDeviceVerificationEmailText(code);
-    // ✅ ✅ ✅ التحقق من الجهاز لا يحتاج مصادقة
     return await this.sendEmail({ to: email, subject, html, text, requireAuth: false });
   }
 

@@ -6,7 +6,7 @@ const express = require('express');
 const router = express.Router();
 
 const authRoutes = require('./authRoutes');
-const emailRoutes = require('./emailRoutes'); // ✅ إضافة
+const emailRoutes = require('./emailRoutes');
 const userRoutes = require('./userRoutes');
 const productRoutes = require('./productRoutes');
 const auctionRoutes = require('./auctionRoutes');
@@ -19,7 +19,7 @@ const ticketRoutes = require('./tickets');
 
 // ✅ المسارات
 router.use('/auth', authRoutes);
-router.use('/email', emailRoutes); // ✅ إضافة مسار الإيميلات
+router.use('/email', emailRoutes);
 router.use('/users', userRoutes);
 router.use('/products', productRoutes);
 router.use('/auctions', auctionRoutes);
