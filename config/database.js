@@ -22,18 +22,15 @@ class Database {
         throw new Error('⚠️ SUPABASE_URL and SUPABASE_ANON_KEY are required');
       }
 
-      // Client عادي
       this.supabase = createClient(supabaseUrl, supabaseKey);
 
-      // Client Admin (Service Role)
       if (supabaseServiceKey) {
         this.supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
       } else {
-        console.warn('⚠️ SUPABASE_SERVICE_ROLE_KEY not found, using anon key for admin operations');
+        console.warn('⚠️ SUPABASE_SERVICE_ROLE_KEY not found, using anon key');
         this.supabaseAdmin = this.supabase;
       }
 
-      // اختبار الاتصال
       const { data, error } = await this.supabase
         .from('users')
         .select('count')
@@ -70,6 +67,46 @@ class Database {
   }
 
   // ============================================
+  // 🔢 ID HELPERS
+  // ============================================
+
+  toSafeId(id) {
+    if (!id) return null;
+    
+    if (typeof id === 'number') return id;
+    
+    if (typeof id === 'string') {
+      const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      if (uuidRegex.test(id)) {
+        return id;
+      }
+      
+      const parsed = parseInt(id);
+      if (!isNaN(parsed) && parsed > 0) {
+        return parsed;
+      }
+      
+      return id;
+    }
+    
+    return id;
+  }
+
+  isValidUUID(id) {
+    if (!id || typeof id !== 'string') return false;
+    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    return uuidRegex.test(id);
+  }
+
+  generateUUID() {
+    return crypto.randomUUID();
+  }
+
+  generateShortId() {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+  }
+
+  // ============================================
   // 🛠️ HELPER METHODS
   // ============================================
 
@@ -78,7 +115,8 @@ class Database {
       let query = this.supabase.from(table).select('*');
       
       for (const [key, value] of Object.entries(filters)) {
-        query = query.eq(key, value);
+        const safeValue = key === 'id' ? this.toSafeId(value) : value;
+        query = query.eq(key, safeValue);
       }
       
       const { data, error } = await query.maybeSingle();
@@ -96,7 +134,8 @@ class Database {
       let query = this.supabase.from(table).select(options.select || '*');
       
       for (const [key, value] of Object.entries(filters)) {
-        query = query.eq(key, value);
+        const safeValue = key === 'id' ? this.toSafeId(value) : value;
+        query = query.eq(key, safeValue);
       }
       
       if (options.orderBy) {
@@ -140,10 +179,11 @@ class Database {
 
   async update(table, id, data, idField = 'id') {
     try {
+      const safeId = this.toSafeId(id);
       const { data: result, error } = await this.supabase
         .from(table)
         .update(data)
-        .eq(idField, id)
+        .eq(idField, safeId)
         .select();
       
       if (error) throw error;
@@ -156,10 +196,11 @@ class Database {
 
   async delete(table, id, idField = 'id') {
     try {
+      const safeId = this.toSafeId(id);
       const { data, error } = await this.supabase
         .from(table)
         .delete()
-        .eq(idField, id)
+        .eq(idField, safeId)
         .select();
       
       if (error) throw error;
@@ -185,20 +226,6 @@ class Database {
     }
   }
 
-  // ============================================
-  // 🔢 ID Helpers
-  // ============================================
-
-  toIntId(id) {
-    if (!id) return 0;
-    if (typeof id === 'number') return id;
-    if (typeof id === 'string') {
-      const parsed = parseInt(id);
-      return isNaN(parsed) ? id.hashCode() : parsed;
-    }
-    return id.hashCode();
-  }
-
   generateId() {
     return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
   }
@@ -208,7 +235,6 @@ class Database {
   }
 }
 
-// Singleton
 let instance = null;
 
 function getDatabase() {

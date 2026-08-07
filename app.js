@@ -1,5 +1,5 @@
 // ============================================
-// 📦 APP - تكوين Express مع نظام أمان متكامل
+// 📦 APP - الملف الرئيسي للخادم
 // ============================================
 
 const express = require('express');
@@ -10,22 +10,34 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const morgan = require('morgan');
 const fs = require('fs');
+const http = require('http');
 require('dotenv').config();
 
-const { errorHandler } = require('./middleware/errorHandler');
+// ============================================
+// 📦 استيراد الموديولات
+// ============================================
+
+const { getDatabase } = require('./config/database');
+const { getSupabaseClient } = require('./config/supabase');
+const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const { limiter, strictLimiter } = require('./middleware/rateLimit');
 const { securityHeaders, sanitizeBody, validateContentType } = require('./middleware/security');
 const { requestLogger, performanceLogger } = require('./middleware/logger');
 const apiRoutes = require('./routes/api');
-
-// ✅ استيراد Socket.IO
+const { scheduleAuctionEnd } = require('./cron/endAuctions');
+const { scheduleCleanup } = require('./cron/cleanup');
 const { initSocket } = require('./socket/auctionSocket');
-const { initTicketSocket } = require('./socket/ticketSocket');
-
-const app = express();
 
 // ============================================
-// 📁 LOGS DIRECTORY
+// 🚀 إنشاء التطبيق
+// ============================================
+
+const app = express();
+const server = http.createServer(app);
+const PORT = process.env.PORT || 3000;
+
+// ============================================
+// 📁 مجلد السجلات
 // ============================================
 
 const logDir = path.join(__dirname, 'logs');
@@ -34,9 +46,10 @@ if (!fs.existsSync(logDir)) {
 }
 
 // ============================================
-// 🛡️ SECURITY MIDDLEWARES
+// 🛡️ MIDDLEWARES
 // ============================================
 
+// الأمان
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -50,6 +63,7 @@ app.use(helmet({
 
 app.use(securityHeaders);
 
+// CORS
 app.use(cors({
   origin: '*',
   credentials: true,
@@ -59,11 +73,13 @@ app.use(cors({
   maxAge: 86400,
 }));
 
+// الضغط
 app.use(compression({
   level: 6,
   threshold: 1024,
 }));
 
+// تحليل الجسم
 app.use(bodyParser.json({ 
   limit: '50mb',
   verify: (req, res, buf) => {
@@ -81,7 +97,7 @@ app.use(bodyParser.json({
 
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
-// Logging
+// التسجيل
 if (process.env.NODE_ENV === 'production') {
   app.use(morgan('combined', {
     stream: fs.createWriteStream(path.join(logDir, 'access.log'), { flags: 'a' }),
@@ -92,14 +108,19 @@ if (process.env.NODE_ENV === 'production') {
 app.use(requestLogger);
 app.use(performanceLogger);
 
+// التحقق من المحتوى
 app.use(validateContentType);
+
+// تحديد المعدل
 app.use('/api', limiter);
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', strictLimiter);
+
+// تنقية الإدخال
 app.use(sanitizeBody);
 
 // ============================================
-// 📂 STATIC FILES
+// 📂 الملفات الثابتة
 // ============================================
 
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
@@ -206,17 +227,6 @@ app.get('/api/docs', (req, res) => {
   });
 });
 
-app.get('/api/status', (req, res) => {
-  res.json({
-    success: true,
-    status: 'online',
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    environment: process.env.NODE_ENV || 'development',
-    timestamp: new Date().toISOString(),
-  });
-});
-
 // ============================================
 // 🚏 ROUTES
 // ============================================
@@ -242,52 +252,33 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ============================================
-// ❌ 404 HANDLER
-// ============================================
-
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    message: '❌ المسار غير موجود',
-    path: req.originalUrl,
-    method: req.method,
-    available_endpoints: [
-      '/',
-      '/api/docs',
-      '/health',
-      '/api/status',
-      '/api/stats',
-      '/api/auth/*',
-      '/api/products/*',
-      '/api/auctions/*',
-      '/api/orders/*',
-      '/api/payments/*',
-      '/api/wallets/*',
-      '/api/admin/*',
-      '/api/notifications/*',
-      '/api/tickets/*',
-    ]
+app.get('/api/status', (req, res) => {
+  res.json({
+    success: true,
+    status: 'online',
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
+    environment: process.env.NODE_ENV || 'development',
+    timestamp: new Date().toISOString(),
   });
 });
 
 // ============================================
-// 🔥 GLOBAL ERROR HANDLER
+// ❌ 404 HANDLER
+// ============================================
+
+app.use(notFoundHandler);
+
+// ============================================
+// 🔥 ERROR HANDLER
 // ============================================
 
 app.use(errorHandler);
 
 // ============================================
-// 🚀 START SERVER مع دعم Socket.IO
+// 🔌 SOCKET.IO
 // ============================================
 
-const PORT = process.env.PORT || 3000;
-
-// ✅ إنشاء خادم HTTP مع دعم Socket.IO
-const http = require('http');
-const server = http.createServer(app);
-
-// ✅ تهيئة Auction Socket مع معالجة الأخطاء
 try {
   initSocket(server);
   console.log('✅ Auction Socket.IO initialized');
@@ -295,36 +286,49 @@ try {
   console.warn('⚠️ Auction Socket initialization skipped:', error.message);
 }
 
-// ✅ تهيئة Ticket Socket مع معالجة الأخطاء
-try {
-  initTicketSocket(server);
-  console.log('✅ Ticket Socket.IO initialized');
-} catch (error) {
-  console.warn('⚠️ Ticket Socket initialization skipped:', error.message);
-}
+// ============================================
+// ⏰ CRON JOBS
+// ============================================
 
-// ✅ تشغيل الخادم
-server.listen(PORT, () => {
-  console.log('═'.repeat(50));
-  console.log('🚀 Sell In API Server');
-  console.log('═'.repeat(50));
-  console.log(`📡 Port: ${PORT}`);
-  console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🗄️ Supabase: ${process.env.SUPABASE_URL ? '✅ Connected' : '❌ Not connected'}`);
-  console.log(`📚 Docs: http://localhost:${PORT}/api/docs`);
-  console.log(`🏥 Health: http://localhost:${PORT}/health`);
-  console.log('═'.repeat(50));
-});
+scheduleAuctionEnd();
+scheduleCleanup();
+
+// ============================================
+// 🚀 START SERVER
+// ============================================
+
+async function startServer() {
+  try {
+    await getDatabase().connect();
+    console.log('✅ Database connected');
+
+    getSupabaseClient();
+    console.log('✅ Supabase initialized');
+
+    server.listen(PORT, () => {
+      console.log('═'.repeat(50));
+      console.log('🚀 Sell In API Server');
+      console.log('═'.repeat(50));
+      console.log(`📡 Port: ${PORT}`);
+      console.log(`🔑 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`🗄️ Supabase: ${process.env.SUPABASE_URL ? '✅ Connected' : '❌ Not connected'}`);
+      console.log(`📚 Docs: http://localhost:${PORT}/api/docs`);
+      console.log(`🏥 Health: http://localhost:${PORT}/health`);
+      console.log('═'.repeat(50));
+    });
+
+  } catch (error) {
+    console.error('❌ Failed to start server:', error.message);
+    process.exit(1);
+  }
+}
 
 // ============================================
 // 🛑 GRACEFUL SHUTDOWN
 // ============================================
 
-process.removeAllListeners('SIGTERM');
-process.removeAllListeners('SIGINT');
-
 process.on('SIGTERM', () => {
-  console.log('🛑 Received SIGTERM, shutting down gracefully...');
+  console.log('🛑 SIGTERM received, shutting down gracefully...');
   server.close(() => {
     console.log('✅ Server closed');
     process.exit(0);
@@ -332,13 +336,13 @@ process.on('SIGTERM', () => {
 });
 
 process.on('SIGINT', () => {
-  console.log('🛑 Received SIGINT, shutting down gracefully...');
+  console.log('🛑 SIGINT received, shutting down gracefully...');
   server.close(() => {
     console.log('✅ Server closed');
     process.exit(0);
   });
 });
 
-console.log('✅ Server is ready and will stay running');
+startServer();
 
-module.exports = app;
+module.exports = { app, server };

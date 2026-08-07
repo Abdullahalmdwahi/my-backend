@@ -1,8 +1,8 @@
 // ============================================
-// ✅ VALIDATORS - نسخة معدلة
+// ✅ VALIDATORS - النسخة المُحسنة
 // ============================================
 
-const { validateEmail: validateEmailHelper, validatePhoneNumber } = require('./helpers');
+const { validateEmail: validateEmailHelper, validatePhoneNumber: validatePhoneHelper } = require('./helpers');
 
 // ============================================
 // 🔢 ID VALIDATORS
@@ -11,6 +11,7 @@ const { validateEmail: validateEmailHelper, validatePhoneNumber } = require('./h
 function validateId(id) {
   if (!id) return { valid: false, message: 'المعرف مطلوب' };
   
+  // ✅ UUID
   if (typeof id === 'string' && id.includes('-')) {
     const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     if (uuidRegex.test(id)) {
@@ -19,6 +20,7 @@ function validateId(id) {
     return { valid: false, message: 'المعرف غير صالح (UUID غير صحيح)' };
   }
   
+  // ✅ Number
   if (typeof id === 'number' || (typeof id === 'string' && /^\d+$/.test(id))) {
     const num = typeof id === 'string' ? parseInt(id) : id;
     if (num > 0) {
@@ -55,18 +57,93 @@ function validateName(name) {
   return { valid: true };
 }
 
-// ✅ النسخة الوحيدة من validateEmail - استخدمت validateEmailHelper من helpers
 function validateEmail(email) {
   if (!email) return { valid: false, message: 'البريد الإلكتروني مطلوب' };
   if (!validateEmailHelper(email)) return { valid: false, message: 'البريد الإلكتروني غير صحيح' };
   return { valid: true };
 }
 
-function validatePhone(phone) {
+// ============================================
+// 📱 PHONE VALIDATORS - المُضافة حديثاً
+// ============================================
+
+/**
+ * التحقق من رقم الهاتف
+ * @param {string} phone - رقم الهاتف
+ * @returns {Object} - { valid: boolean, message: string, cleaned: string }
+ */
+function validatePhoneNumber(phone) {
   if (!phone) return { valid: false, message: 'رقم الهاتف مطلوب' };
-  if (!validatePhoneNumber(phone)) return { valid: false, message: 'رقم الهاتف غير صحيح' };
-  return { valid: true };
+  
+  // ✅ إزالة جميع الأحرف غير الرقمية
+  const cleaned = phone.replace(/\D/g, '');
+  
+  // ✅ التحقق من الطول
+  if (cleaned.length < 8 || cleaned.length > 15) {
+    return { valid: false, message: 'رقم الهاتف يجب أن يكون بين 8 و 15 رقم' };
+  }
+  
+  return { valid: true, cleaned };
 }
+
+/**
+ * التحقق من رقم المحفظة الإلكترونية
+ * @param {string} phone - رقم المحفظة
+ * @returns {Object} - { valid: boolean, message: string, cleaned: string }
+ */
+function validateWalletPhone(phone) {
+  const result = validatePhoneNumber(phone);
+  if (!result.valid) return result;
+  
+  const cleaned = result.cleaned || '';
+  
+  // ✅ التحقق من أن الرقم يبدأ بـ 7 أو 77 (للمحافظ اليمنية)
+  // ✅ يمكن تخصيص هذا حسب الدولة
+  if (!cleaned.startsWith('7') && !cleaned.startsWith('77')) {
+    return { valid: false, message: 'رقم المحفظة يجب أن يبدأ بـ 7 أو 77' };
+  }
+  
+  // ✅ التحقق من الطول المناسب للمحفظة (10 أرقام في اليمن)
+  if (cleaned.length !== 10) {
+    return { valid: false, message: 'رقم المحفظة يجب أن يكون 10 أرقام' };
+  }
+  
+  return { valid: true, cleaned };
+}
+
+/**
+ * التحقق من تطابق رقمين هاتف
+ * @param {string} phone1 - الرقم الأول
+ * @param {string} phone2 - الرقم الثاني
+ * @returns {boolean} - true إذا تطابقا
+ */
+function validatePhoneMatch(phone1, phone2) {
+  if (!phone1 || !phone2) return false;
+  const clean1 = phone1.replace(/\D/g, '');
+  const clean2 = phone2.replace(/\D/g, '');
+  return clean1 === clean2;
+}
+
+/**
+ * تنسيق رقم الهاتف
+ * @param {string} phone - رقم الهاتف
+ * @param {string} countryCode - رمز الدولة (مثال: +967)
+ * @returns {string} - الرقم المنسق
+ */
+function formatPhoneNumber(phone, countryCode = '+967') {
+  const cleaned = phone.replace(/\D/g, '');
+  const code = countryCode.replace('+', '');
+  
+  if (cleaned.startsWith(code)) {
+    return `+${cleaned}`;
+  }
+  
+  return `+${code}${cleaned}`;
+}
+
+// ============================================
+// 🔑 PASSWORD VALIDATORS
+// ============================================
 
 function validatePassword(password) {
   if (!password) return { valid: false, message: 'كلمة المرور مطلوبة' };
@@ -86,10 +163,10 @@ function validatePasswordStrength(password) {
   if (/[0-9]/.test(password)) score++;
   if (/[!@#$%^&*(),.?":{}|<>]/.test(password)) score++;
   
-  let strength = 'weak';
-  if (score >= 6) strength = 'very_strong';
-  else if (score >= 5) strength = 'strong';
-  else if (score >= 3) strength = 'medium';
+  let strength = 'ضعيفة';
+  if (score >= 6) strength = 'قوية جداً';
+  else if (score >= 5) strength = 'قوية';
+  else if (score >= 3) strength = 'متوسطة';
   
   return {
     valid: true,
@@ -145,56 +222,6 @@ function validateProductImages(images) {
   return { valid: true };
 }
 
-function validateProductCategory(categoryIds) {
-  if (!categoryIds || !Array.isArray(categoryIds)) {
-    return { valid: false, message: 'يجب اختيار قسم واحد على الأقل' };
-  }
-  if (categoryIds.length === 0) {
-    return { valid: false, message: 'يجب اختيار قسم واحد على الأقل' };
-  }
-  if (categoryIds.length > 10) {
-    return { valid: false, message: 'يمكن اختيار حتى 10 أقسام فقط' };
-  }
-  return { valid: true };
-}
-
-// ============================================
-// 🔨 AUCTION VALIDATORS
-// ============================================
-
-function validateAuctionTitle(title) {
-  return validateProductTitle(title);
-}
-
-function validateAuctionDescription(description) {
-  return validateProductDescription(description);
-}
-
-function validateAuctionStartingPrice(price) {
-  return validateProductPrice(price);
-}
-
-function validateAuctionMinBidIncrement(increment) {
-  if (increment === undefined || increment === null) {
-    return { valid: false, message: 'الحد الأدنى للزيادة مطلوب' };
-  }
-  if (typeof increment !== 'number' || isNaN(increment)) {
-    return { valid: false, message: 'الحد الأدنى للزيادة يجب أن يكون رقماً' };
-  }
-  if (increment < 1) {
-    return { valid: false, message: 'الحد الأدنى للزيادة يجب أن يكون أكبر من صفر' };
-  }
-  return { valid: true };
-}
-
-function validateAuctionEndTime(endTime) {
-  if (!endTime) return { valid: false, message: 'وقت الانتهاء مطلوب' };
-  const end = new Date(endTime);
-  if (isNaN(end.getTime())) return { valid: false, message: 'وقت الانتهاء غير صحيح' };
-  if (end <= new Date()) return { valid: false, message: 'وقت الانتهاء يجب أن يكون في المستقبل' };
-  return { valid: true };
-}
-
 // ============================================
 // 💰 PAYMENT VALIDATORS
 // ============================================
@@ -220,15 +247,6 @@ function validateCurrency(currency) {
   if (!currency) return { valid: false, message: 'العملة مطلوبة' };
   if (!supported.includes(currency)) {
     return { valid: false, message: `العملة غير مدعومة. العملات المدعومة: ${supported.join(', ')}` };
-  }
-  return { valid: true };
-}
-
-function validatePaymentMethod(method) {
-  const supported = ['wallet', 'card', 'bank', 'digital', 'cash', 'purchase_code'];
-  if (!method) return { valid: false, message: 'طريقة الدفع مطلوبة' };
-  if (!supported.includes(method)) {
-    return { valid: false, message: `طريقة الدفع غير مدعومة` };
   }
   return { valid: true };
 }
@@ -261,25 +279,7 @@ function validateOrderAddress(address) {
 }
 
 // ============================================
-// 🏷️ TAG/CATEGORY VALIDATORS
-// ============================================
-
-function validateCategoryName(name) {
-  if (!name) return { valid: false, message: 'اسم القسم مطلوب' };
-  if (name.length < 2) return { valid: false, message: 'اسم القسم يجب أن يكون حرفين على الأقل' };
-  if (name.length > 50) return { valid: false, message: 'اسم القسم يجب أن لا يتجاوز 50 حرف' };
-  return { valid: true };
-}
-
-function validateTag(tag) {
-  if (!tag) return { valid: false, message: 'التصنيف مطلوب' };
-  if (tag.length < 2) return { valid: false, message: 'التصنيف يجب أن يكون حرفين على الأقل' };
-  if (tag.length > 30) return { valid: false, message: 'التصنيف يجب أن لا يتجاوز 30 حرف' };
-  return { valid: true };
-}
-
-// ============================================
-// 📌 REVIEW/RATING VALIDATORS
+// ⭐ REVIEW/RATING VALIDATORS
 // ============================================
 
 function validateRating(rating) {
@@ -314,7 +314,10 @@ module.exports = {
   // User
   validateName,
   validateEmail,
-  validatePhone,
+  validatePhone: validatePhoneNumber,
+  validateWalletPhone,
+  validatePhoneMatch,
+  formatPhoneNumber,
   validatePassword,
   validatePasswordStrength,
   validateBusinessName,
@@ -324,27 +327,14 @@ module.exports = {
   validateProductDescription,
   validateProductPrice,
   validateProductImages,
-  validateProductCategory,
-  
-  // Auction
-  validateAuctionTitle,
-  validateAuctionDescription,
-  validateAuctionStartingPrice,
-  validateAuctionMinBidIncrement,
-  validateAuctionEndTime,
   
   // Payment
   validateAmount,
   validateCurrency,
-  validatePaymentMethod,
   
   // Order
   validateOrderQuantity,
   validateOrderAddress,
-  
-  // Category
-  validateCategoryName,
-  validateTag,
   
   // Review
   validateRating,

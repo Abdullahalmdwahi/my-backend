@@ -1,11 +1,10 @@
 // ============================================
-// 🚏 API ROUTES - تجميع جميع المسارات
+// 🚏 API ROUTES
 // ============================================
 
 const express = require('express');
 const router = express.Router();
 
-// استيراد المسارات
 const authRoutes = require('./authRoutes');
 const userRoutes = require('./userRoutes');
 const productRoutes = require('./productRoutes');
@@ -15,10 +14,7 @@ const paymentRoutes = require('./paymentRoutes');
 const walletRoutes = require('./walletRoutes');
 const adminRoutes = require('./adminRoutes');
 const notificationRoutes = require('./notificationRoutes');
-
-// ============================================
-// 📌 المسارات
-// ============================================
+const ticketRoutes = require('./tickets');
 
 router.use('/auth', authRoutes);
 router.use('/users', userRoutes);
@@ -29,11 +25,9 @@ router.use('/payments', paymentRoutes);
 router.use('/wallets', walletRoutes);
 router.use('/admin', adminRoutes);
 router.use('/notifications', notificationRoutes);
+router.use('/tickets', ticketRoutes);
 
-// ============================================
-// 🏥 Health Check
-// ============================================
-
+// Health Check
 router.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -44,10 +38,7 @@ router.get('/health', (req, res) => {
   });
 });
 
-// ============================================
-// 📊 Stats (public)
-// ============================================
-
+// Stats
 router.get('/stats', async (req, res) => {
   try {
     const { getSupabaseClient } = require('../config/supabase');
@@ -80,12 +71,10 @@ router.get('/stats', async (req, res) => {
     res.status(500).json({
       success: false,
       message: '❌ حدث خطأ في جلب الإحصائيات',
-      error: process.env.NODE_ENV === 'development' ? error.message : undefined,
     });
   }
 });
 
-// ✅ إضافة مسار معلومات الخادم
 router.get('/info', (req, res) => {
   res.json({
     success: true,
@@ -97,9 +86,5 @@ router.get('/info', (req, res) => {
     timestamp: new Date().toISOString(),
   });
 });
-
-// ❌ إزالة هذه الأسطر تماماً:
-// app.use((req, res) => { ... });
-// app.use(errorHandler);
 
 module.exports = router;

@@ -87,6 +87,7 @@ const TABLES = {
   aiSuggestions: 'ai_suggestions',
   questions: 'questions',
   answers: 'answers',
+  refresh_tokens: 'refresh_tokens',
 };
 
 // ============================================
@@ -126,28 +127,13 @@ function getSupabaseAdmin() {
   return supabaseAdmin;
 }
 
-// ============================================
-// 🛠️ HELPER FUNCTIONS - تم إصلاحها ✅
-// ============================================
-
-/**
- * التحقق من صحة UUID
- * @param {string} id - المعرف المراد التحقق منه
- * @returns {boolean} - صحيح إذا كان UUID صالحاً
- */
 function isValidUUID(id) {
   if (!id) return false;
   if (typeof id !== 'string') return false;
-  // التحقق من صيغة UUID v4
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(id);
 }
 
-/**
- * تحويل المعرف إلى String بشكل آمن (للمعرفات التي قد تكون أرقام)
- * @param {string|number} id - المعرف
- * @returns {string} - المعرف كـ String
- */
 function toSafeId(id) {
   if (!id) return '';
   if (typeof id === 'string') return id;
@@ -155,18 +141,10 @@ function toSafeId(id) {
   return String(id);
 }
 
-/**
- * توليد معرف UUID جديد
- * @returns {string} - UUID v4
- */
 function generateUUID() {
   return crypto.randomUUID();
 }
 
-/**
- * توليد معرف قصير (للطلبات والمزادات)
- * @returns {string} - معرف قصير
- */
 function generateShortId() {
   return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
 }
@@ -219,27 +197,16 @@ async function deleteFile(bucket, path) {
   return data;
 }
 
-// ============================================
-// 🔐 RLS HELPERS (Admin only)
-// ============================================
-
 async function enableRLS(table) {
   const admin = getSupabaseAdmin();
-  // RLS can only be enabled via SQL, not via JS SDK
-  // This is a placeholder
   console.log(`⚠️ RLS for ${table} must be enabled via SQL`);
   return true;
 }
 
 async function createRLSPolicy(table, name, definition) {
-  // RLS policies can only be created via SQL
   console.log(`⚠️ RLS policy for ${table} must be created via SQL`);
   return true;
 }
-
-// ============================================
-// 📊 QUERY HELPERS
-// ============================================
 
 function buildQuery(table, filters = {}, options = {}) {
   const client = getSupabaseClient();
