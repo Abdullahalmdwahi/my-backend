@@ -289,14 +289,16 @@ const server = http.createServer(app);
 
 // ✅ تهيئة Auction Socket
 try {
+  const { initSocket } = require('./socket/auctionSocket');
   initSocket(server);
   console.log('✅ Auction Socket.IO initialized');
 } catch (error) {
   console.warn('⚠️ Auction Socket initialization skipped:', error.message);
 }
 
-// ✅ تهيئة Ticket Socket
+// ✅ تهيئة Ticket Socket مع معالجة الأخطاء
 try {
+  const { initTicketSocket } = require('./socket/ticketSocket');
   initTicketSocket(server);
   console.log('✅ Ticket Socket.IO initialized');
 } catch (error) {
