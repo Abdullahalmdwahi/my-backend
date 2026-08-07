@@ -3,7 +3,7 @@
 // ============================================
 
 const cron = require('node-cron');
-// ✅ التصحيح: استيراد النموذج بشكل صحيح
+// ✅ استيراد النموذج بشكل صحيح
 const AuctionModel = require('../models/Auction');
 
 // ============================================
@@ -16,7 +16,6 @@ function scheduleAuctionEnd() {
     console.log('🔄 جاري التحقق من المزادات المنتهية...');
     
     try {
-      // ✅ استخدام النموذج بشكل صحيح
       const endedCount = await AuctionModel.endExpiredAuctions();
       
       if (endedCount > 0) {

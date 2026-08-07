@@ -1,5 +1,5 @@
 // ============================================
-// 📦 APP - الملف الرئيسي
+// 📦 APP - الملف الرئيسي للخادم
 // ============================================
 
 const express = require('express');
@@ -20,7 +20,7 @@ require('dotenv').config();
 const { getDatabase } = require('./config/database');
 const { getSupabaseClient } = require('./config/supabase');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
-const { limiter, strictLimiter } = require('./middleware/rateLimit');
+const { limiter, strictLimiter, registerLimiter, emailLimiter } = require('./middleware/rateLimit');
 const { securityHeaders, sanitizeBody, validateContentType } = require('./middleware/security');
 const { requestLogger, performanceLogger } = require('./middleware/logger');
 const apiRoutes = require('./routes/api');
@@ -104,9 +104,13 @@ app.use(requestLogger);
 app.use(performanceLogger);
 
 app.use(validateContentType);
+
+// ✅ تطبيق Rate Limit
 app.use('/api', limiter);
 app.use('/api/auth/login', strictLimiter);
-app.use('/api/auth/register', strictLimiter);
+app.use('/api/auth/register', registerLimiter);
+app.use('/api/email/send', emailLimiter); // ✅ إضافة Email Limiter
+
 app.use(sanitizeBody);
 
 // ============================================

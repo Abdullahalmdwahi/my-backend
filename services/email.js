@@ -1,5 +1,5 @@
 // ============================================
-// 📧 EMAIL SERVICE - النسخة المُصلحة بالكامل
+// 📧 EMAIL SERVICE - النسخة المُصلحة
 // ============================================
 
 const nodemailer = require('nodemailer');
@@ -12,17 +12,18 @@ class EmailService {
   constructor() {
     this.transporter = null;
     this.apiBaseUrl = process.env.API_BASE_URL || 'https://my-backend-hvha.onrender.com';
+    this.lastSendTime = null;
+    this.minInterval = 3000; // 3 ثواني بين الإيميلات
     this.initializeTransporter();
   }
 
   initializeTransporter() {
     try {
-      // ✅ إعدادات Gmail مع منع IPv6
       const gmailConfig = {
         host: process.env.GMAIL_SMTP_HOST || 'smtp.gmail.com',
         port: parseInt(process.env.GMAIL_SMTP_PORT || '587'),
         secure: false,
-        family: 4, // ✅ منع IPv6
+        family: 4,
         auth: {
           user: process.env.GMAIL_EMAIL,
           pass: process.env.GMAIL_APP_PASSWORD ? process.env.GMAIL_APP_PASSWORD.replace(/\s/g, '') : '',
@@ -41,8 +42,6 @@ class EmailService {
       console.log(`📧 User: ${gmailConfig.auth.user}`);
 
       this.transporter = nodemailer.createTransport(gmailConfig);
-      
-      // ✅ التحقق من الاتصال
       this.verifyConnection();
       console.log('✅ Email Service initialized with Gmail');
     } catch (error) {
@@ -69,18 +68,29 @@ class EmailService {
     }
   }
 
+  // ✅ التحقق من الفاصل الزمني بين الإيميلات
+  async waitIfNeeded() {
+    if (this.lastSendTime) {
+      const elapsed = Date.now() - this.lastSendTime;
+      if (elapsed < this.minInterval) {
+        const waitTime = this.minInterval - elapsed;
+        console.log(`⏳ انتظار ${waitTime}ms قبل الإرسال التالي`);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+    this.lastSendTime = Date.now();
+  }
+
   // ============================================
   // 📤 SEND EMAIL
   // ============================================
 
   async sendEmail({ to, subject, html, text, requireAuth = false }) {
-    // ✅ إذا كان requireAuth = false، نرسل عبر API بدون مصادقة
     if (!requireAuth) {
       console.log(`📧 [بدون مصادقة] إرسال بريد إلى: ${to}`);
       return await this.sendViaApi(to, subject, html, text, false);
     }
 
-    // ✅ إذا كان requireAuth = true، نحاول إرسال عبر SMTP أولاً
     if (this.transporter) {
       try {
         const mailOptions = {
@@ -117,6 +127,9 @@ class EmailService {
 
   async sendViaApi(to, subject, html, text, requireAuth) {
     try {
+      // ✅ انتظر قبل الإرسال
+      await this.waitIfNeeded();
+
       console.log(`📧 [API] إرسال بريد إلى: ${to}`);
       
       const payload = {
@@ -153,16 +166,18 @@ class EmailService {
     } catch (error) {
       console.error(`❌ [API] خطأ في إرسال البريد:`, error.message);
       
-      // ✅ محاكاة الإرسال في حالة الفشل
-      console.log(`📧 [محاكاة] إرسال بريد إلى: ${to}`);
-      console.log(`📧 الموضوع: ${subject}`);
+      if (process.env.NODE_ENV === 'development') {
+        console.log(`📧 [محاكاة] إرسال بريد إلى: ${to}`);
+        console.log(`📧 الموضوع: ${subject}`);
+        return { 
+          success: true, 
+          messageId: `mock-${Date.now()}`,
+          simulated: true,
+          warning: '⚠️ تم استخدام المحاكاة بسبب فشل الإرسال الفعلي'
+        };
+      }
       
-      return { 
-        success: true, 
-        messageId: `mock-${Date.now()}`,
-        simulated: true,
-        warning: '⚠️ تم استخدام المحاكاة بسبب فشل الإرسال الفعلي'
-      };
+      return { success: false, error: error.message };
     }
   }
 
