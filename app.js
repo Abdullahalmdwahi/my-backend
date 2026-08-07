@@ -194,39 +194,6 @@ app.get('/', (req, res) => {
   });
 });
 
-app.get('/api/docs', (req, res) => {
-  res.json({
-    success: true,
-    message: '📚 توثيق API - Sell In',
-    version: '2.0.0',
-    base_url: process.env.API_BASE_URL || 'https://my-backend-hvha.onrender.com',
-    authentication: {
-      type: 'Bearer Token',
-      header: 'Authorization: Bearer <your_token>',
-      endpoints: {
-        login: 'POST /api/auth/login',
-        register: 'POST /api/auth/register',
-        refresh: 'POST /api/auth/refresh-token',
-        verifyDevice: 'POST /api/auth/verify-device',
-      }
-    },
-    modules: {
-      auth: '/api/auth',
-      users: '/api/users',
-      products: '/api/products',
-      auctions: '/api/auctions',
-      orders: '/api/orders',
-      payments: '/api/payments',
-      wallets: '/api/wallets',
-      admin: '/api/admin',
-      notifications: '/api/notifications',
-      tickets: '/api/tickets',
-    },
-    health: '/health',
-    stats: '/api/stats',
-  });
-});
-
 // ============================================
 // 🚏 ROUTES
 // ============================================
@@ -249,17 +216,6 @@ app.get('/health', (req, res) => {
     },
     environment: process.env.NODE_ENV || 'development',
     version: process.env.APP_VERSION || '1.0.0',
-  });
-});
-
-app.get('/api/status', (req, res) => {
-  res.json({
-    success: true,
-    status: 'online',
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
-    environment: process.env.NODE_ENV || 'development',
-    timestamp: new Date().toISOString(),
   });
 });
 

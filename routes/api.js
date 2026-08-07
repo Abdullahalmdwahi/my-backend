@@ -1,11 +1,12 @@
 // ============================================
-// 🚏 API ROUTES
+// 🚏 API ROUTES - النسخة المُصلحة
 // ============================================
 
 const express = require('express');
 const router = express.Router();
 
 const authRoutes = require('./authRoutes');
+const emailRoutes = require('./emailRoutes'); // ✅ إضافة
 const userRoutes = require('./userRoutes');
 const productRoutes = require('./productRoutes');
 const auctionRoutes = require('./auctionRoutes');
@@ -16,7 +17,9 @@ const adminRoutes = require('./adminRoutes');
 const notificationRoutes = require('./notificationRoutes');
 const ticketRoutes = require('./tickets');
 
+// ✅ المسارات
 router.use('/auth', authRoutes);
+router.use('/email', emailRoutes); // ✅ إضافة مسار الإيميلات
 router.use('/users', userRoutes);
 router.use('/products', productRoutes);
 router.use('/auctions', auctionRoutes);
@@ -27,7 +30,7 @@ router.use('/admin', adminRoutes);
 router.use('/notifications', notificationRoutes);
 router.use('/tickets', ticketRoutes);
 
-// Health Check
+// ✅ Health Check
 router.get('/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -38,7 +41,7 @@ router.get('/health', (req, res) => {
   });
 });
 
-// Stats
+// ✅ Stats
 router.get('/stats', async (req, res) => {
   try {
     const { getSupabaseClient } = require('../config/supabase');

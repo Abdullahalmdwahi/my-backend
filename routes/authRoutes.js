@@ -1,5 +1,5 @@
 // ============================================
-// 🔐 AUTH ROUTES
+// 🔐 AUTH ROUTES - النسخة المُصلحة
 // ============================================
 
 const express = require('express');
@@ -9,7 +9,7 @@ const { verifyToken } = require('../middleware/auth');
 const { limiter, strictLimiter, registerLimiter } = require('../middleware/rateLimit');
 const { validate, schemas } = require('../middleware/validation');
 
-// Public
+// ✅ Public Routes
 router.post('/register', registerLimiter, validate(schemas.register), authController.register);
 router.post('/login', strictLimiter, validate(schemas.login), authController.login);
 router.post('/verify', limiter, validate(schemas.verify), authController.verify);
@@ -19,7 +19,7 @@ router.post('/forgot-password', limiter, authController.forgotPassword);
 router.post('/reset-password', limiter, validate(schemas.resetPassword), authController.resetPassword);
 router.post('/refresh-token', limiter, authController.refreshToken);
 
-// Protected
+// ✅ Protected Routes
 router.post('/logout', verifyToken, authController.logout);
 router.get('/me', verifyToken, authController.getMe);
 router.put('/me', verifyToken, validate(schemas.updateUser), authController.updateMe);
