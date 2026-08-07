@@ -1,5 +1,5 @@
 // ============================================
-// 🎫 TICKET CONTROLLER - متكامل مع دردشة فورية
+// 🎫 TICKET CONTROLLER - النسخة المُصلحة
 // ============================================
 
 const { getSupabaseClient, TABLES } = require('../config/supabase');
@@ -12,7 +12,7 @@ const { getIO } = require('../socket/ticketSocket');
 class TicketController {
   
   // ============================================
-  // 📋 إنشاء تذكرة جديدة
+  // 📝 إنشاء تذكرة جديدة
   // ============================================
   static async createTicket(req, res, next) {
     try {
@@ -60,7 +60,7 @@ class TicketController {
         .from('ticket_messages')
         .insert(messageData);
 
-      // ✅ إرسال إشعار فوري للمديرين
+      // ✅ إرسال إشعار للمديرين
       await NotificationService.sendToAdmin(
         '🎫 تذكرة دعم جديدة',
         `من: ${req.user.name}\nالموضوع: ${subject}`,
@@ -84,7 +84,9 @@ class TicketController {
 
       // ✅ إرسال عبر Socket.io
       const io = getIO();
-      io.to('admin').emit('new-ticket', ticket);
+      if (io) {
+        io.to('admin').emit('new-ticket', ticket);
+      }
 
       res.status(201).json({
         success: true,
@@ -98,7 +100,7 @@ class TicketController {
   }
 
   // ============================================
-  // 💬 إرسال رسالة (فورية)
+  // 💬 إرسال رسالة
   // ============================================
   static async sendMessage(req, res, next) {
     try {
@@ -150,9 +152,8 @@ class TicketController {
         .update({ updated_at: new Date().toISOString() })
         .eq('id', ticketId);
 
-      // ✅ إرسال إشعار فوري
+      // ✅ إشعارات
       if (req.user.isAdmin) {
-        // ✅ رد من المدير → إشعار للمستخدم
         await NotificationService.sendToUser(
           ticket.user_id,
           '💬 رد من الدعم الفني',
@@ -160,7 +161,6 @@ class TicketController {
           { ticketId, messageId: msg.id, type: 'admin_reply' }
         );
       } else {
-        // ✅ رسالة من المستخدم → إشعار للمدير
         await NotificationService.sendToAdmin(
           `💬 رد جديد من ${req.user.name}`,
           message ? (message.length > 50 ? message.substring(0, 50) + '...' : message) : '📎 صورة',
@@ -168,13 +168,13 @@ class TicketController {
         );
       }
 
-      // ✅ إرسال عبر Socket.io (فوري)
+      // ✅ إرسال عبر Socket.io
       const io = getIO();
-      io.to(`ticket-${ticketId}`).emit('new-message', msg);
-      
-      // ✅ إعلام المديرين في حالة رسالة من المستخدم
-      if (!req.user.isAdmin) {
-        io.to('admin').emit('ticket-message', { ticketId, message: msg });
+      if (io) {
+        io.to(`ticket-${ticketId}`).emit('new-message', msg);
+        if (!req.user.isAdmin) {
+          io.to('admin').emit('ticket-message', { ticketId, message: msg });
+        }
       }
 
       res.json({
@@ -189,7 +189,7 @@ class TicketController {
   }
 
   // ============================================
-  // 📋 جلب رسائل التذكرة (Realtime)
+  // 📋 جلب رسائل التذكرة
   // ============================================
   static async getMessages(req, res, next) {
     try {
@@ -244,7 +244,80 @@ class TicketController {
   }
 
   // ============================================
-  // 📋 تحديث حالة التذكرة
+  // 👤 جلب تذاكر المستخدم
+  // ============================================
+  static async getUserTickets(req, res, next) {
+    try {
+      const { userId } = req.params;
+      const currentUserId = req.user.id;
+
+      // ✅ التحقق من الصلاحية
+      if (userId !== currentUserId && !req.user.isAdmin) {
+        throw new ValidationError('⚠️ غير مصرح لك بمشاهدة هذه التذاكر');
+      }
+
+      const client = getSupabaseClient();
+      const { data, error } = await client
+        .from(TABLES.supportTickets)
+        .select('*')
+        .eq('user_id', userId)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+
+      res.json({
+        success: true,
+        data: data || [],
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // 📊 جلب جميع التذاكر (للمدير)
+  // ============================================
+  static async getAllTickets(req, res, next) {
+    try {
+      if (!req.user.isAdmin) {
+        throw new ValidationError('⚠️ غير مصرح لك');
+      }
+
+      const { status, limit = 50, offset = 0 } = req.query;
+
+      const client = getSupabaseClient();
+      let query = client
+        .from(TABLES.supportTickets)
+        .select('*, messages:ticket_messages(*)');
+
+      if (status) {
+        query = query.eq('status', status);
+      }
+
+      const { data, error } = await query
+        .order('created_at', { ascending: false })
+        .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
+
+      if (error) throw error;
+
+      res.json({
+        success: true,
+        data: data || [],
+        pagination: {
+          limit: parseInt(limit),
+          offset: parseInt(offset),
+          total: data?.length || 0,
+        },
+      });
+
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // 🔄 تحديث حالة التذكرة
   // ============================================
   static async updateTicketStatus(req, res, next) {
     try {
@@ -283,53 +356,14 @@ class TicketController {
 
       // ✅ إرسال عبر Socket.io
       const io = getIO();
-      io.to(`ticket-${ticketId}`).emit('ticket-updated', ticket);
+      if (io) {
+        io.to(`ticket-${ticketId}`).emit('ticket-updated', ticket);
+      }
 
       res.json({
         success: true,
         message: '✅ تم تحديث حالة التذكرة',
         data: ticket,
-      });
-
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  // ============================================
-  // 📋 جلب جميع التذاكر (للمدير)
-  // ============================================
-  static async getAllTickets(req, res, next) {
-    try {
-      if (!req.user.isAdmin) {
-        throw new ValidationError('⚠️ غير مصرح لك');
-      }
-
-      const { status, limit = 50, offset = 0 } = req.query;
-
-      const client = getSupabaseClient();
-      let query = client
-        .from(TABLES.supportTickets)
-        .select('*, messages:ticket_messages(*)');
-
-      if (status) {
-        query = query.eq('status', status);
-      }
-
-      const { data, error } = await query
-        .order('created_at', { ascending: false })
-        .range(parseInt(offset), parseInt(offset) + parseInt(limit) - 1);
-
-      if (error) throw error;
-
-      res.json({
-        success: true,
-        data: data || [],
-        pagination: {
-          limit: parseInt(limit),
-          offset: parseInt(offset),
-          total: data?.length || 0,
-        },
       });
 
     } catch (error) {

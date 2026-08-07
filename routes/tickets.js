@@ -1,5 +1,5 @@
 // ============================================
-// 🎫 TICKET ROUTES - مسارات التذاكر والدردشة
+// 🎫 TICKET ROUTES - النسخة المُصلحة
 // ============================================
 
 const express = require('express');
@@ -9,7 +9,7 @@ const { verifyToken, verifyAdmin } = require('../middleware/auth');
 const { validate, schemas } = require('../middleware/validation');
 
 // ============================================
-// 📋 مسارات المستخدم
+// 👤 مستخدم
 // ============================================
 
 // @route   POST /api/tickets
@@ -46,38 +46,38 @@ router.get(
 router.get(
   '/user/:userId',
   verifyToken,
-  ticketController.getUserTickets
+  ticketController.getUserTickets // ✅ تأكد من وجود هذه الدالة
 );
 
 // ============================================
-// 📋 مسارات المدير
+// 👑 مدير
 // ============================================
 
-// @route   GET /api/admin/tickets
+// @route   GET /api/tickets/admin/all
 // @desc    جلب جميع التذاكر
 // @access  Admin
 router.get(
-  '/admin/tickets',
+  '/admin/all',
   verifyToken,
   verifyAdmin,
-  ticketController.getAllTickets
+  ticketController.getAllTickets // ✅ السطر 46 - تم الإصلاح
 );
 
-// @route   PUT /api/admin/tickets/:ticketId/status
+// @route   PUT /api/tickets/admin/:ticketId/status
 // @desc    تحديث حالة التذكرة
 // @access  Admin
 router.put(
-  '/admin/tickets/:ticketId/status',
+  '/admin/:ticketId/status',
   verifyToken,
   verifyAdmin,
   ticketController.updateTicketStatus
 );
 
-// @route   GET /api/admin/tickets/stats
+// @route   GET /api/tickets/admin/stats
 // @desc    جلب إحصائيات التذاكر
 // @access  Admin
 router.get(
-  '/admin/tickets/stats',
+  '/admin/stats',
   verifyToken,
   verifyAdmin,
   ticketController.getTicketStats

@@ -1,5 +1,5 @@
 // ============================================
-// 📦 APP - الملف الرئيسي للخادم
+// 📦 APP - الملف الرئيسي
 // ============================================
 
 const express = require('express');
@@ -49,7 +49,6 @@ if (!fs.existsSync(logDir)) {
 // 🛡️ MIDDLEWARES
 // ============================================
 
-// الأمان
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -63,7 +62,6 @@ app.use(helmet({
 
 app.use(securityHeaders);
 
-// CORS
 app.use(cors({
   origin: '*',
   credentials: true,
@@ -73,13 +71,11 @@ app.use(cors({
   maxAge: 86400,
 }));
 
-// الضغط
 app.use(compression({
   level: 6,
   threshold: 1024,
 }));
 
-// تحليل الجسم
 app.use(bodyParser.json({ 
   limit: '50mb',
   verify: (req, res, buf) => {
@@ -97,7 +93,6 @@ app.use(bodyParser.json({
 
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
-// التسجيل
 if (process.env.NODE_ENV === 'production') {
   app.use(morgan('combined', {
     stream: fs.createWriteStream(path.join(logDir, 'access.log'), { flags: 'a' }),
@@ -108,15 +103,10 @@ if (process.env.NODE_ENV === 'production') {
 app.use(requestLogger);
 app.use(performanceLogger);
 
-// التحقق من المحتوى
 app.use(validateContentType);
-
-// تحديد المعدل
 app.use('/api', limiter);
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', strictLimiter);
-
-// تنقية الإدخال
 app.use(sanitizeBody);
 
 // ============================================
@@ -150,6 +140,9 @@ app.get('/', (req, res) => {
         verifyDevice: 'POST /api/auth/verify-device',
         me: 'GET /api/auth/me',
         logout: 'POST /api/auth/logout',
+      },
+      email: {
+        send: 'POST /api/email/send',
       },
       products: {
         list: 'GET /api/products',
@@ -266,7 +259,7 @@ async function startServer() {
       console.log('🚀 Sell In API Server');
       console.log('═'.repeat(50));
       console.log(`📡 Port: ${PORT}`);
-      console.log(`🔑 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🗄️ Supabase: ${process.env.SUPABASE_URL ? '✅ Connected' : '❌ Not connected'}`);
       console.log(`📚 Docs: http://localhost:${PORT}/api/docs`);
       console.log(`🏥 Health: http://localhost:${PORT}/health`);
