@@ -1,13 +1,8 @@
-// ============================================
-// 📧 EMAIL ROUTES - مع Rate Limit
-// ============================================
-
 const express = require('express');
 const router = express.Router();
 const emailService = require('../services/email');
 const { emailLimiter } = require('../middleware/rateLimit');
 
-// ✅ مسار إرسال الإيميلات مع Rate Limit
 router.post('/send', emailLimiter, async (req, res) => {
   try {
     const { to, subject, html, text } = req.body;

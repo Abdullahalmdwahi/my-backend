@@ -1,13 +1,8 @@
-// ============================================
-// 🚦 RATE LIMIT - النسخة المُصلحة
-// ============================================
-
 const rateLimit = require('express-rate-limit');
 
-// ✅ Base Limiter - زيادة الحدود
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 دقيقة
-  max: 1000, // ✅ زيادة من 100 إلى 1000
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -29,10 +24,9 @@ const limiter = rateLimit({
   },
 });
 
-// ✅ Strict Limiter - زيادة الحدود
 const strictLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 50, // ✅ زيادة من 5 إلى 50
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -46,10 +40,9 @@ const strictLimiter = rateLimit({
   },
 });
 
-// ✅ Register Limiter - زيادة الحدود
 const registerLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // ساعة
-  max: 20, // ✅ زيادة من 3 إلى 20
+  windowMs: 60 * 60 * 1000,
+  max: 20,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
@@ -58,10 +51,9 @@ const registerLimiter = rateLimit({
   },
 });
 
-// ✅ Email Limiter - جديد لمنع 429 على الإيميلات
 const emailLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000, // ساعة
-  max: 50, // 50 إيميل في الساعة
+  windowMs: 60 * 60 * 1000,
+  max: 50,
   standardHeaders: true,
   legacyHeaders: false,
   message: {
