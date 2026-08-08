@@ -1,27 +1,39 @@
+// ============================================
+// 📧 EMAIL ROUTES - مع Rate Limit
+// ============================================
+
 const express = require('express');
 const router = express.Router();
 const emailService = require('../services/email');
 const { emailLimiter } = require('../middleware/rateLimit');
 
+// ============================================
+// 📧 إرسال بريد إلكتروني
+// ============================================
 router.post('/send', emailLimiter, async (req, res) => {
   try {
     const { to, subject, html, text } = req.body;
     
+    // ✅ التحقق من البيانات المطلوبة
     if (!to || !subject || !html) {
       return res.status(400).json({
         success: false,
-        message: '⚠️ to, subject, html مطلوبة'
+        message: '⚠️ to, subject, html مطلوبة',
+        error: 'MISSING_REQUIRED_FIELDS'
       });
     }
 
     console.log(`📧 إرسال بريد إلى: ${to}`);
     console.log(`📌 الموضوع: ${subject}`);
 
+    // ✅ تأخير بسيط لتجنب الإرسال المتكرر
+    await new Promise(resolve => setTimeout(resolve, 100));
+
     const result = await emailService.sendEmail({
       to,
       subject,
       html,
-      text: text || html.replace(/<[^>]*>/g, ''),
+      text: text || '',
       requireAuth: false
     });
 
@@ -29,13 +41,18 @@ router.post('/send', emailLimiter, async (req, res) => {
       return res.json({
         success: true,
         message: '✅ تم إرسال البريد بنجاح',
-        messageId: result.messageId
+        messageId: result.messageId,
+        simulated: result.simulated || false,
+        ...(result.simulated && { 
+          warning: '⚠️ تم استخدام المحاكاة بسبب فشل الإرسال الفعلي',
+          code: result.code
+        })
       });
     } else {
       return res.status(500).json({
         success: false,
         message: '❌ فشل إرسال البريد',
-        error: result.error
+        error: result.error || 'EMAIL_SEND_FAILED'
       });
     }
   } catch (error) {
