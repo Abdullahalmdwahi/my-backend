@@ -14,6 +14,9 @@ const { limiter, strictLimiter, registerLimiter, emailLimiter } = require('./mid
 const { securityHeaders, sanitizeBody, validateContentType } = require('./middleware/security');
 const apiRoutes = require('./routes/api');
 
+// ✅ إضافة Email Queue
+const emailQueue = require('./services/emailQueue');
+
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
@@ -22,6 +25,10 @@ const logDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir, { recursive: true });
 }
+
+// ============================================
+// 🛡️ MIDDLEWARE
+// ============================================
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -63,6 +70,10 @@ app.use(bodyParser.json({
 
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
+// ============================================
+// 📝 LOGGING
+// ============================================
+
 if (process.env.NODE_ENV === 'production') {
   app.use(morgan('combined', {
     stream: fs.createWriteStream(path.join(logDir, 'access.log'), { flags: 'a' }),
@@ -71,6 +82,10 @@ if (process.env.NODE_ENV === 'production') {
   app.use(morgan('dev'));
 }
 
+// ============================================
+// 🛡️ SECURITY & RATE LIMITING
+// ============================================
+
 app.use(validateContentType);
 app.use('/api', limiter);
 app.use('/api/auth/login', strictLimiter);
@@ -78,8 +93,16 @@ app.use('/api/auth/register', registerLimiter);
 app.use('/api/email/send', emailLimiter);
 app.use(sanitizeBody);
 
+// ============================================
+// 📁 STATIC FILES
+// ============================================
+
 app.use('/uploads', express.static(path.join(__dirname, 'uploads'), { maxAge: '7d' }));
 app.use('/temp', express.static(path.join(__dirname, 'temp')));
+
+// ============================================
+// 🏠 ROUTES
+// ============================================
 
 app.get('/', (req, res) => {
   res.json({
@@ -101,6 +124,7 @@ app.get('/', (req, res) => {
       },
       email: {
         send: 'POST /api/email/send',
+        queueStatus: 'GET /api/email/queue/status',
       },
     },
   });
@@ -108,7 +132,33 @@ app.get('/', (req, res) => {
 
 app.use('/api', apiRoutes);
 
+// ============================================
+// ✅ EMAIL QUEUE STATUS (مراقبة)
+// ============================================
+
+app.get('/api/email/queue/status', (req, res) => {
+  try {
+    const status = emailQueue.getStatus();
+    res.json({
+      success: true,
+      data: status,
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error) {
+    res.status(500).json({
+      success: false,
+      message: '❌ فشل جلب حالة الطابور',
+      error: error.message,
+    });
+  }
+});
+
+// ============================================
+// 🏥 HEALTH CHECK
+// ============================================
+
 app.get('/health', (req, res) => {
+  const queueStatus = emailQueue.getStatus();
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -120,11 +170,25 @@ app.get('/health', (req, res) => {
     },
     environment: process.env.NODE_ENV || 'development',
     version: process.env.APP_VERSION || '1.0.0',
+    emailQueue: {
+      queueLength: queueStatus.queueLength,
+      processing: queueStatus.processing,
+      totalProcessed: queueStatus.totalProcessed,
+      totalFailed: queueStatus.totalFailed,
+    },
   });
 });
 
+// ============================================
+// ❌ ERROR HANDLERS
+// ============================================
+
 app.use(notFoundHandler);
 app.use(errorHandler);
+
+// ============================================
+// 🚀 START SERVER
+// ============================================
 
 async function startServer() {
   try {
@@ -136,6 +200,7 @@ async function startServer() {
       console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`📧 Email: ${process.env.BREVO_FROM_EMAIL}`);
       console.log(`🗄️ Supabase: ${process.env.SUPABASE_URL ? '✅ Connected' : '❌ Not connected'}`);
+      console.log(`📊 Email Queue: Ready (${emailQueue.getStatus().queueLength} pending)`);
       console.log(`🏥 Health: http://localhost:${PORT}/health`);
       console.log('═'.repeat(50));
     });
@@ -145,10 +210,15 @@ async function startServer() {
   }
 }
 
+// ============================================
+// 🛑 GRACEFUL SHUTDOWN
+// ============================================
+
 process.on('SIGTERM', () => {
   console.log('🛑 SIGTERM received, shutting down gracefully...');
   server.close(() => {
     console.log('✅ Server closed');
+    console.log(`📊 Email Queue stats: ${emailQueue.getStatus().totalProcessed} processed, ${emailQueue.getStatus().totalFailed} failed`);
     process.exit(0);
   });
 });
@@ -157,10 +227,11 @@ process.on('SIGINT', () => {
   console.log('🛑 SIGINT received, shutting down gracefully...');
   server.close(() => {
     console.log('✅ Server closed');
+    console.log(`📊 Email Queue stats: ${emailQueue.getStatus().totalProcessed} processed, ${emailQueue.getStatus().totalFailed} failed`);
     process.exit(0);
   });
 });
 
 startServer();
 
-module.exports = { app, server };
+module.exports = { app, server, emailQueue };

@@ -4,24 +4,36 @@
 
 const { TABLES, getSupabaseClient } = require('../config/supabase');
 
-class AuctionModel {
-  static get table() { return TABLES.auctions; }
-  
-  // ============================================
-  // 🔍 FIND METHODS - تم إصلاحها ✅
-  // ============================================
-  
-  static async findById(id) {
-    const client = getSupabaseClient();
-    const { data, error } = await client
-      .from(this.table)
-      .select('*')
-      .eq('id', id)
-      .maybeSingle();
+class Auction {
+  static async endAuction(id) {
+    const supabase = getSupabaseClient();
     
+    // ✅ الحصول على أعلى عرض
+    const { data: highestBid } = await supabase
+      .from('bids')
+      .select('*')
+      .eq('auction_id', id)
+      .order('amount', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    // ✅ تحديث المزاد مع ended_at
+    const { data, error } = await supabase
+      .from('auctions')
+      .update({
+        status: 'ended',
+        winner_id: highestBid?.user_id || null,
+        ended_at: new Date().toISOString(), // ✅ العمود المفقود
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
     if (error) throw error;
     return data;
   }
+
   
   static async findByIdWithDetails(id) {
     const client = getSupabaseClient();

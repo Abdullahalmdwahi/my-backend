@@ -1,10 +1,11 @@
 // ============================================
-// 📧 EMAIL SERVICE
+// 📧 EMAIL SERVICE - مع Queue
 // ============================================
 
 const nodemailer = require('nodemailer');
 const axios = require('axios');
 const dotenv = require('dotenv');
+const emailQueue = require('./emailQueue');
 
 dotenv.config();
 
@@ -12,8 +13,6 @@ class EmailService {
   constructor() {
     this.transporter = null;
     this.apiBaseUrl = process.env.API_BASE_URL || 'https://my-backend-hvha.onrender.com';
-    this.lastSendTime = null;
-    this.minInterval = 3000;
     this.initializeTransporter();
   }
 
@@ -57,65 +56,72 @@ class EmailService {
     }
   }
 
-  async waitIfNeeded() {
-    if (this.lastSendTime) {
-      const elapsed = Date.now() - this.lastSendTime;
-      if (elapsed < this.minInterval) {
-        const waitTime = this.minInterval - elapsed;
-        await new Promise(resolve => setTimeout(resolve, waitTime));
-      }
-    }
-    this.lastSendTime = Date.now();
-  }
-
+  // ✅ الإرسال عبر Queue (الطريقة الرئيسية)
   async sendEmail({ to, subject, html, text }) {
     if (!html) {
       return { success: false, error: 'html content is required' };
     }
 
-    if (this.transporter) {
-      try {
-        await this.waitIfNeeded();
-        const plainText = text || html.replace(/<[^>]*>/g, '').trim();
-
-        const mailOptions = {
-          from: `"${process.env.BREVO_FROM_NAME || 'Sell In'}" <${process.env.BREVO_FROM_EMAIL}>`,
-          to: to,
-          subject: subject,
-          html: html,
-          text: plainText,
-        };
-
-        const info = await Promise.race([
-          this.transporter.sendMail(mailOptions),
-          new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('Email timeout after 30 seconds')), 30000)
-          )
-        ]);
-
-        console.log(`✅ Email sent to ${to}: ${info.messageId}`);
-        return { success: true, messageId: info.messageId };
-      } catch (error) {
-        console.error(`❌ Failed to send email to ${to}:`, error.message);
-        return await this.sendViaApi(to, subject, html, text);
-      }
+    try {
+      const result = await emailQueue.add({
+        to,
+        subject,
+        html,
+        text: text || html.replace(/<[^>]*>/g, '').trim(),
+      });
+      return result;
+    } catch (error) {
+      console.error(`❌ Failed to send email to ${to}:`, error.message);
+      
+      // ✅ محاولة المحاكاة في حالة الفشل النهائي
+      return this.simulateEmailSend(to, html);
     }
-
-    return await this.sendViaApi(to, subject, html, text);
   }
 
-  async sendViaApi(to, subject, html, text) {
-    try {
-      await this.waitIfNeeded();
-      const plainText = text || html.replace(/<[^>]*>/g, '').trim();
-      const safeHtml = html || '<p>محتوى البريد الإلكتروني</p>';
+  // ✅ الإرسال المباشر (للحالات الطارئة)
+  async sendEmailDirect({ to, subject, html, text }) {
+    if (!this.transporter) {
+      return this.sendEmailViaApi({ to, subject, html, text });
+    }
 
-      const payload = { to, subject, html: safeHtml, text: plainText };
+    try {
+      const plainText = text || html.replace(/<[^>]*>/g, '').trim();
+      const mailOptions = {
+        from: `"${process.env.BREVO_FROM_NAME || 'Sell In'}" <${process.env.BREVO_FROM_EMAIL}>`,
+        to: to,
+        subject: subject,
+        html: html,
+        text: plainText,
+      };
+
+      const info = await Promise.race([
+        this.transporter.sendMail(mailOptions),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Email timeout after 30 seconds')), 30000)
+        )
+      ]);
+
+      console.log(`✅ Email sent to ${to}: ${info.messageId}`);
+      return { success: true, messageId: info.messageId };
+    } catch (error) {
+      console.error(`❌ Failed to send email to ${to}:`, error.message);
+      return this.sendEmailViaApi({ to, subject, html, text });
+    }
+  }
+
+  // ✅ الإرسال عبر API
+  async sendEmailViaApi({ to, subject, html, text }) {
+    try {
+      const plainText = text || html.replace(/<[^>]*>/g, '').trim();
+      const payload = { to, subject, html, text: plainText };
 
       const response = await axios.post(
         `${this.apiBaseUrl}/api/email/send`,
         payload,
-        { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 30000,
+        }
       );
 
       if (response.data && response.data.success) {
@@ -125,22 +131,30 @@ class EmailService {
       return { success: false, error: response.data?.message };
     } catch (error) {
       console.error(`❌ [API] Error sending email:`, error.message);
-      
-      let code = 'N/A';
-      if (html && typeof html === 'string') {
-        const codeMatch = html.match(/<div class="code">([^<]+)<\/div>/);
-        if (codeMatch) code = codeMatch[1];
-      }
-      
-      return { 
-        success: true, 
-        messageId: `mock-${Date.now()}`,
-        simulated: true,
-        warning: '⚠️ Simulation used',
-        code: code
-      };
+      return this.simulateEmailSend(to, html);
     }
   }
+
+  // ✅ محاكاة الإرسال
+  simulateEmailSend(to, html) {
+    let code = 'N/A';
+    if (html && typeof html === 'string') {
+      const codeMatch = html.match(/<div class="code">([^<]+)<\/div>/);
+      if (codeMatch) code = codeMatch[1];
+    }
+    
+    return {
+      success: true,
+      messageId: `mock-${Date.now()}`,
+      simulated: true,
+      warning: '⚠️ Simulation used',
+      code: code,
+    };
+  }
+
+  // ============================================
+  // 📧 دوال بناء البريد الإلكتروني
+  // ============================================
 
   async sendVerificationEmail(email, code) {
     const subject = '✅ تفعيل حسابك في Sell In';
@@ -170,9 +184,12 @@ class EmailService {
     return await this.sendEmail({ to: email, subject, html, text });
   }
 
+  // ============================================
+  // 🏗️ بناء قوالب HTML
+  // ============================================
+
   buildVerificationEmailHtml(code) {
-    return `
-<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
@@ -219,29 +236,15 @@ class EmailService {
     </div>
   </div>
 </body>
-</html>
-    `;
+</html>`;
   }
 
   buildVerificationEmailText(code) {
-    return `
-Sell In - رمز التحقق
-
-مرحباً بك في Sell In!
-
-رمز التفعيل الخاص بك هو: ${code}
-
-أدخل هذا الرمز في التطبيق لتفعيل حسابك.
-
-⚠️ هذا الرمز صالح لمدة 24 ساعة فقط.
-
-© ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة
-    `;
+    return `Sell In - رمز التحقق\n\nمرحباً بك في Sell In!\n\nرمز التفعيل الخاص بك هو: ${code}\n\nأدخل هذا الرمز في التطبيق لتفعيل حسابك.\n\n⚠️ هذا الرمز صالح لمدة 24 ساعة فقط.\n\n© ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة`;
   }
 
   buildPasswordResetEmailHtml(token) {
-    return `
-<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
@@ -257,7 +260,6 @@ Sell In - رمز التحقق
     .code { font-size: 42px; font-weight: bold; color: #7F1D1D; letter-spacing: 8px; font-family: 'Courier New', monospace; background: white; padding: 10px 20px; border-radius: 8px; display: inline-block; }
     .footer { text-align: center; font-size: 12px; color: #999; padding: 20px; border-top: 1px solid #eee; background: #fafafa; }
     .warning { background: #FFF3E0; padding: 15px; border-radius: 12px; margin: 20px 0; border-right: 4px solid #FF9800; }
-    .warning ul { margin: 10px 0 0; color: #E65100; font-size: 13px; padding-right: 20px; }
   </style>
 </head>
 <body>
@@ -276,12 +278,8 @@ Sell In - رمز التحقق
         <p style="margin-top: 12px; color: #666; font-size: 12px;">أدخل هذا الرمز في التطبيق لإعادة تعيين كلمة المرور</p>
       </div>
       <div class="warning">
-        <p style="margin: 0; color: #E65100; font-weight: bold;">⚠️ تنبيهات هامة:</p>
-        <ul>
-          <li>هذا الرمز صالح لمدة <strong>24 ساعة</strong> فقط</li>
-          <li>إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذا البريد</li>
-          <li>لا تشارك هذا الرمز مع أي شخص آخر</li>
-        </ul>
+        <p style="margin: 0; color: #E65100; font-weight: bold;">⚠️ هذا الرمز صالح لمدة <strong>24 ساعة</strong> فقط</p>
+        <p style="margin: 5px 0 0; color: #E65100; font-size: 13px;">🔒 إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذا البريد.</p>
       </div>
     </div>
     <div class="footer">
@@ -289,29 +287,15 @@ Sell In - رمز التحقق
     </div>
   </div>
 </body>
-</html>
-    `;
+</html>`;
   }
 
   buildPasswordResetEmailText(token) {
-    return `
-Sell In - إعادة تعيين كلمة المرور
-
-لقد تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك.
-
-رمز التحقق الخاص بك هو: ${token}
-
-أدخل هذا الرمز في التطبيق لإعادة تعيين كلمة المرور.
-
-⚠️ هذا الرمز صالح لمدة 24 ساعة فقط.
-
-© ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة
-    `;
+    return `Sell In - إعادة تعيين كلمة المرور\n\nلقد تلقينا طلباً لإعادة تعيين كلمة المرور الخاصة بحسابك.\n\nرمز التحقق الخاص بك هو: ${token}\n\nأدخل هذا الرمز في التطبيق لإعادة تعيين كلمة المرور.\n\n⚠️ هذا الرمز صالح لمدة 24 ساعة فقط.\n\n🔒 إذا لم تطلب إعادة تعيين كلمة المرور، يرجى تجاهل هذا البريد.\n\n© ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة`;
   }
 
   buildDeviceVerificationEmailHtml(code) {
-    return `
-<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
@@ -354,32 +338,16 @@ Sell In - إعادة تعيين كلمة المرور
     </div>
   </div>
 </body>
-</html>
-    `;
+</html>`;
   }
 
   buildDeviceVerificationEmailText(code) {
-    return `
-Sell In - جهاز جديد
-
-تم طلب تسجيل الدخول إلى حسابك من جهاز جديد.
-
-رمز التحقق الخاص بك هو: ${code}
-
-أدخل هذا الرمز في التطبيق لتأكيد الجهاز.
-
-⚠️ هذا الرمز صالح لمدة 10 دقائق فقط.
-
-🔒 إذا لم تكن أنت من حاول تسجيل الدخول، يرجى تغيير كلمة المرور فوراً.
-
-© ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة
-    `;
+    return `Sell In - جهاز جديد\n\nتم طلب تسجيل الدخول إلى حسابك من جهاز جديد.\n\nرمز التحقق الخاص بك هو: ${code}\n\nأدخل هذا الرمز في التطبيق لتأكيد الجهاز.\n\n⚠️ هذا الرمز صالح لمدة 10 دقائق فقط.\n\n🔒 إذا لم تكن أنت من حاول تسجيل الدخول، يرجى تغيير كلمة المرور فوراً.\n\n© ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة`;
   }
 
   buildWelcomeEmailHtml(userName) {
     const name = userName || 'مستخدمنا العزيز';
-    return `
-<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
   <meta charset="UTF-8">
@@ -391,9 +359,9 @@ Sell In - جهاز جديد
     .header h1 { margin: 0; font-size: 28px; font-weight: bold; }
     .header p { margin: 5px 0 0; opacity: 0.9; font-size: 14px; }
     .content { padding: 30px; }
-    .footer { text-align: center; font-size: 12px; color: #999; padding: 20px; border-top: 1px solid #eee; background: #fafafa; }
     .features { background: #f8f9fa; padding: 15px; border-radius: 12px; margin: 20px 0; }
     .features ul { margin: 10px 0 0; padding-right: 20px; }
+    .footer { text-align: center; font-size: 12px; color: #999; padding: 20px; border-top: 1px solid #eee; background: #fafafa; }
   </style>
 </head>
 <body>
@@ -421,29 +389,12 @@ Sell In - جهاز جديد
     </div>
   </div>
 </body>
-</html>
-    `;
+</html>`;
   }
 
   buildWelcomeEmailText(userName) {
     const name = userName || 'مستخدمنا العزيز';
-    return `
-Sell In - مرحباً بك!
-
-مرحباً ${name}!
-
-نحن سعداء بانضمامك إلى Sell In - سوقك الإلكتروني الموثوق.
-
-مع Sell In يمكنك:
-- بيع وشراء المنتجات بسهولة
-- المشاركة في المزادات
-- التواصل مع البائعين والمشترين
-- تقييم المنتجات والتجارب
-
-نتمنى لك تجربة ممتعة!
-
-© ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة
-    `;
+    return `Sell In - مرحباً بك!\n\nمرحباً ${name}!\n\nنحن سعداء بانضمامك إلى Sell In - سوقك الإلكتروني الموثوق.\n\nمع Sell In يمكنك:\n- بيع وشراء المنتجات بسهولة\n- المشاركة في المزادات\n- التواصل مع البائعين والمشترين\n- تقييم المنتجات والتجارب\n\nنتمنى لك تجربة ممتعة!\n\n© ${new Date().getFullYear()} Sell In - جميع الحقوق محفوظة`;
   }
 }
 
