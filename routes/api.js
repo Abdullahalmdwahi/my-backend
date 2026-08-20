@@ -1,11 +1,19 @@
+// ============================================
+// 📦 API ROUTES - المسارات الرئيسية
+// ============================================
+
 const express = require('express');
 const router = express.Router();
 
+// ✅ تعريف كل متغير مرة واحدة فقط
 const authRoutes = require('./auth');
 const emailRoutes = require('./email');
 
-const authRoutes = require('./auth');        // ✅ auth.js موجود
-const emailRoutes = require('./email'); 
+// ✅ استخدام المسارات
+router.use('/auth', authRoutes);
+router.use('/email', emailRoutes);
+
+// ✅ Health check
 router.get('/health', (req, res) => {
   res.json({
     success: true,
