@@ -30,14 +30,13 @@ const registerLimiter = rateLimit({
 });
 
 const emailLimiter = rateLimit({
-  windowMs: 60 * 60 * 1000,
-  max: 20,
+  windowMs: 60 * 60 * 1000, // ساعة واحدة
+  max: 100, // ✅ زود العدد إلى 100
   message: {
     success: false,
     message: '⚠️ عدد الإيميلات تجاوز الحد المسموح، حاول بعد ساعة',
   },
 });
-
 module.exports = {
   limiter,
   strictLimiter,
