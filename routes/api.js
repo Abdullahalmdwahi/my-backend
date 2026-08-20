@@ -4,9 +4,8 @@ const router = express.Router();
 const authRoutes = require('./auth');
 const emailRoutes = require('./email');
 
-router.use('/auth', authRoutes);
-router.use('/email', emailRoutes);
-
+const authRoutes = require('./auth');        // ✅ auth.js موجود
+const emailRoutes = require('./email'); 
 router.get('/health', (req, res) => {
   res.json({
     success: true,
