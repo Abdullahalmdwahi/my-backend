@@ -96,4 +96,4 @@ const jwtService = {
   },
 };
 
-module.exports = jwtService;
+module.exports = jwtService;    

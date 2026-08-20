@@ -109,7 +109,7 @@ app.use(validateContentType);
 app.use('/api', limiter);
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', registerLimiter);
-app.use('/api/email/send', emailLimiter); // ✅ إضافة Email Limiter
+app.use('/api/email/send', emailLimiter);
 
 app.use(sanitizeBody);
 
@@ -134,9 +134,6 @@ app.get('/', (req, res) => {
     status: 'online',
     timestamp: new Date().toISOString(),
     endpoints: {
-      docs: '/api/docs',
-      health: '/health',
-      api: '/api',
       auth: {
         register: 'POST /api/auth/register',
         login: 'POST /api/auth/login',
@@ -144,49 +141,14 @@ app.get('/', (req, res) => {
         verifyDevice: 'POST /api/auth/verify-device',
         me: 'GET /api/auth/me',
         logout: 'POST /api/auth/logout',
+        forgotPassword: 'POST /api/auth/forgot-password',
+        resetPassword: 'POST /api/auth/reset-password',
       },
       email: {
         send: 'POST /api/email/send',
       },
-      products: {
-        list: 'GET /api/products',
-        create: 'POST /api/products',
-        search: 'GET /api/products/search',
-        getById: 'GET /api/products/:id',
-      },
-      auctions: {
-        list: 'GET /api/auctions',
-        create: 'POST /api/auctions',
-        placeBid: 'POST /api/auctions/:id/bid',
-        getById: 'GET /api/auctions/:id',
-      },
-      orders: {
-        list: 'GET /api/orders',
-        create: 'POST /api/orders',
-        getById: 'GET /api/orders/:id',
-      },
-      payments: {
-        methods: 'GET /api/payments/methods',
-        create: 'POST /api/payments',
-      },
-      wallets: {
-        balance: 'GET /api/wallets/balance',
-        transactions: 'GET /api/wallets/transactions',
-      },
-      tickets: {
-        create: 'POST /api/tickets',
-        messages: 'GET /api/tickets/:ticketId/messages',
-      },
-      admin: {
-        stats: 'GET /api/admin/stats',
-        users: 'GET /api/admin/users',
-      },
-      notifications: {
-        list: 'GET /api/notifications',
-        markRead: 'POST /api/notifications/:id/read',
-      },
     },
-    documentation: 'https://my-backend-hvha.onrender.com/api/health',
+    documentation: '/api/health',
     support: '📧 support@sellin.com',
   });
 });
@@ -264,8 +226,8 @@ async function startServer() {
       console.log('═'.repeat(50));
       console.log(`📡 Port: ${PORT}`);
       console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`📧 Email: ${process.env.BREVO_FROM_EMAIL}`);
       console.log(`🗄️ Supabase: ${process.env.SUPABASE_URL ? '✅ Connected' : '❌ Not connected'}`);
-      console.log(`📚 Docs: http://localhost:${PORT}/api/docs`);
       console.log(`🏥 Health: http://localhost:${PORT}/health`);
       console.log('═'.repeat(50));
     });

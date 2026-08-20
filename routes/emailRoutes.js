@@ -1,5 +1,5 @@
 // ============================================
-// 📧 EMAIL ROUTES - مع Rate Limit
+// 📧 EMAIL ROUTES
 // ============================================
 
 const express = require('express');
@@ -14,7 +14,6 @@ router.post('/send', emailLimiter, async (req, res) => {
   try {
     const { to, subject, html, text } = req.body;
     
-    // ✅ التحقق من البيانات المطلوبة
     if (!to || !subject || !html) {
       return res.status(400).json({
         success: false,
@@ -26,7 +25,6 @@ router.post('/send', emailLimiter, async (req, res) => {
     console.log(`📧 إرسال بريد إلى: ${to}`);
     console.log(`📌 الموضوع: ${subject}`);
 
-    // ✅ تأخير بسيط لتجنب الإرسال المتكرر
     await new Promise(resolve => setTimeout(resolve, 100));
 
     const result = await emailService.sendEmail({
@@ -44,7 +42,7 @@ router.post('/send', emailLimiter, async (req, res) => {
         messageId: result.messageId,
         simulated: result.simulated || false,
         ...(result.simulated && { 
-          warning: '⚠️ تم استخدام المحاكاة بسبب فشل الإرسال الفعلي',
+          warning: '⚠️ تم استخدام المحاكاة',
           code: result.code
         })
       });
