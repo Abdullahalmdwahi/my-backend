@@ -1,9 +1,9 @@
 const express = require('express');
 const router = express.Router();
-const emailQueue = require('../services/emailQueue');
+const emailService = require('../services/email');
 const { emailLimiter } = require('../middleware/rateLimit');
 
-// ✅ إرسال بريد عبر Queue
+// ✅ إرسال بريد
 router.post('/send', emailLimiter, async (req, res) => {
   try {
     const { to, subject, html, text } = req.body;
@@ -19,8 +19,7 @@ router.post('/send', emailLimiter, async (req, res) => {
     console.log(`📧 إرسال بريد إلى: ${to}`);
     console.log(`📌 الموضوع: ${subject}`);
 
-    // ✅ إضافة إلى الطابور
-    const result = await emailQueue.add({
+    const result = await emailService.sendEmail({
       to,
       subject,
       html,
@@ -33,8 +32,8 @@ router.post('/send', emailLimiter, async (req, res) => {
         message: '✅ تم إرسال البريد بنجاح',
         messageId: result.messageId,
         simulated: result.simulated || false,
-        ...(result.simulated && {
-          warning: '⚠️ تم استخدام المحاكاة',
+        ...(result.simulated && { 
+          warning: '⚠️ تم استخدام المحاكاة بسبب فشل الإرسال الفعلي',
           code: result.code
         })
       });
@@ -51,22 +50,6 @@ router.post('/send', emailLimiter, async (req, res) => {
       success: false,
       message: '❌ حدث خطأ في الخادم',
       error: error.message
-    });
-  }
-});
-
-// ✅ الحصول على حالة الطابور (للمراقبة)
-router.get('/queue/status', async (req, res) => {
-  try {
-    const status = emailQueue.getStatus();
-    res.json({
-      success: true,
-      data: status,
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '❌ فشل جلب حالة الطابور',
     });
   }
 });

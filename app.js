@@ -50,7 +50,6 @@ app.use(cors({
 
 app.use(compression({ level: 6, threshold: 1024 }));
 
-// ✅ زيادة Timeout لـ Body Parser
 app.use(bodyParser.json({ 
   limit: '50mb',
   verify: (req, res, buf) => {
@@ -65,17 +64,6 @@ app.use(bodyParser.json({
     }
   }
 }));
-
-// ✅ إضافة Timeout للطلبات
-app.use((req, res, next) => {
-  req.setTimeout(60000, () => {
-    res.status(408).json({
-      success: false,
-      message: '⚠️ انتهت مهلة الطلب',
-    });
-  });
-  next();
-});
 
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 

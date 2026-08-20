@@ -1,5 +1,5 @@
 // ============================================
-// 🛡️ RATE LIMIT - نسخة معدلة للاختبار
+// 🛡️ RATE LIMIT - معطل للاختبار
 // ============================================
 
 const rateLimit = require('express-rate-limit');
@@ -40,9 +40,10 @@ const registerLimiter = rateLimit({
   },
 });
 
-// ✅ تعطيل Rate Limit للبريد تماماً
+// ✅ تعطيل Rate Limit للبريد تماماً للاختبار
 const emailLimiter = (req, res, next) => {
   // ✅ السماح بكل الطلبات (لا يوجد Rate Limit)
+  console.log('📧 [emailLimiter] Rate Limit معطل - السماح بالطلب');
   next();
 };
 

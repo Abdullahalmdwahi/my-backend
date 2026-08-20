@@ -7,6 +7,15 @@ const dotenv = require('dotenv');
 
 dotenv.config();
 
+// ✅ سجلات التصحيح عند تحميل الخدمة
+console.log('🔍 [DEBUG] ===== EMAIL SERVICE LOADED =====');
+console.log('🔍 [DEBUG] BREVO_API_KEY exists in process.env:', !!process.env.BREVO_API_KEY);
+console.log('🔍 [DEBUG] BREVO_API_KEY length:', process.env.BREVO_API_KEY?.length || 0);
+console.log('🔍 [DEBUG] BREVO_API_KEY first 10 chars:', process.env.BREVO_API_KEY?.substring(0, 10) || 'N/A');
+console.log('🔍 [DEBUG] BREVO_FROM_EMAIL:', process.env.BREVO_FROM_EMAIL || 'NOT SET');
+console.log('🔍 [DEBUG] BREVO_FROM_NAME:', process.env.BREVO_FROM_NAME || 'NOT SET');
+console.log('🔍 [DEBUG] =====================================');
+
 class EmailService {
   constructor() {
     this.brevoApiKey = process.env.BREVO_API_KEY;
@@ -15,11 +24,29 @@ class EmailService {
     this.maxRetries = 3;
     this.retryDelay = 3000;
     this.timeout = 30000;
+    
+    console.log('🔍 [DEBUG] EmailService constructor:');
+    console.log('  - brevoApiKey exists:', !!this.brevoApiKey);
+    console.log('  - brevoApiKey length:', this.brevoApiKey?.length || 0);
+    console.log('  - fromEmail:', this.fromEmail);
+    console.log('  - fromName:', this.fromName);
   }
 
   // ✅ الإرسال عبر Brevo API مباشرة
   async sendEmail({ to, subject, html, text }) {
+    // ✅ سجلات التصحيح عند الإرسال
+    console.log('🔍 [DEBUG] ===== START EMAIL SEND =====');
+    console.log('🔍 [DEBUG] to:', to);
+    console.log('🔍 [DEBUG] subject:', subject);
+    console.log('🔍 [DEBUG] BREVO_API_KEY exists:', !!this.brevoApiKey);
+    console.log('🔍 [DEBUG] BREVO_API_KEY length:', this.brevoApiKey?.length || 0);
+    console.log('🔍 [DEBUG] BREVO_API_KEY first 10 chars:', this.brevoApiKey?.substring(0, 10) || 'N/A');
+    console.log('🔍 [DEBUG] FROM_EMAIL:', this.fromEmail);
+    console.log('🔍 [DEBUG] FROM_NAME:', this.fromName);
+    console.log('🔍 [DEBUG] =============================');
+
     if (!html) {
+      console.error('❌ [DEBUG] html content is required');
       return { success: false, error: 'html content is required' };
     }
 
@@ -32,6 +59,8 @@ class EmailService {
     while (attempt < this.maxRetries) {
       attempt++;
       try {
+        console.log(`🔄 Attempt ${attempt}/${this.maxRetries}`);
+        
         const result = await Promise.race([
           this._sendViaBrevoApi({ to, subject, html, text }),
           new Promise((_, reject) => 
@@ -82,6 +111,8 @@ class EmailService {
         textContent: plainText,
       };
 
+      console.log(`📤 إرسال إلى Brevo API:`, JSON.stringify(payload, null, 2));
+
       const response = await axios.post(
         'https://api.brevo.com/v3/smtp/email',
         payload,
@@ -93,6 +124,8 @@ class EmailService {
           timeout: 30000,
         }
       );
+
+      console.log(`✅ Brevo response:`, response.data);
 
       if (response.data && response.data.messageId) {
         return {
