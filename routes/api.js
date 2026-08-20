@@ -1,24 +1,12 @@
-// ============================================
-// 🚏 API ROUTES - الملف الرئيسي
-// ============================================
-
 const express = require('express');
 const router = express.Router();
 
-// ✅ استيراد Routes
 const authRoutes = require('./auth');
 const emailRoutes = require('./email');
-
-// ============================================
-// 🚏 تعريف المسارات
-// ============================================
 
 router.use('/auth', authRoutes);
 router.use('/email', emailRoutes);
 
-// ============================================
-// 🏥 Health Check
-// ============================================
 router.get('/health', (req, res) => {
   res.json({
     success: true,

@@ -1,7 +1,3 @@
-// ============================================
-// 📦 APP - الملف الرئيسي للخادم
-// ============================================
-
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -13,41 +9,19 @@ const fs = require('fs');
 const http = require('http');
 require('dotenv').config();
 
-// ============================================
-// 📦 استيراد الموديولات
-// ============================================
-
-const { getDatabase } = require('./config/database');
-const { getSupabaseClient } = require('./config/supabase');
 const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
 const { limiter, strictLimiter, registerLimiter, emailLimiter } = require('./middleware/rateLimit');
 const { securityHeaders, sanitizeBody, validateContentType } = require('./middleware/security');
-const { requestLogger, performanceLogger } = require('./middleware/logger');
 const apiRoutes = require('./routes/api');
-const { scheduleAuctionEnd } = require('./cron/endAuctions');
-const { scheduleCleanup } = require('./cron/cleanup');
-const { initSocket } = require('./socket/auctionSocket');
-
-// ============================================
-// 🚀 إنشاء التطبيق
-// ============================================
 
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
-// ============================================
-// 📁 مجلد السجلات
-// ============================================
-
 const logDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logDir)) {
   fs.mkdirSync(logDir, { recursive: true });
 }
-
-// ============================================
-// 🛡️ MIDDLEWARES
-// ============================================
 
 app.use(helmet({
   contentSecurityPolicy: {
@@ -61,7 +35,6 @@ app.use(helmet({
 }));
 
 app.use(securityHeaders);
-
 app.use(cors({
   origin: '*',
   credentials: true,
@@ -71,10 +44,7 @@ app.use(cors({
   maxAge: 86400,
 }));
 
-app.use(compression({
-  level: 6,
-  threshold: 1024,
-}));
+app.use(compression({ level: 6, threshold: 1024 }));
 
 app.use(bodyParser.json({ 
   limit: '50mb',
@@ -100,31 +70,16 @@ if (process.env.NODE_ENV === 'production') {
 } else {
   app.use(morgan('dev'));
 }
-app.use(requestLogger);
-app.use(performanceLogger);
 
 app.use(validateContentType);
-
-// ✅ تطبيق Rate Limit
 app.use('/api', limiter);
 app.use('/api/auth/login', strictLimiter);
 app.use('/api/auth/register', registerLimiter);
 app.use('/api/email/send', emailLimiter);
-
 app.use(sanitizeBody);
 
-// ============================================
-// 📂 الملفات الثابتة
-// ============================================
-
-app.use('/uploads', express.static(path.join(__dirname, 'uploads'), {
-  maxAge: '7d',
-}));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), { maxAge: '7d' }));
 app.use('/temp', express.static(path.join(__dirname, 'temp')));
-
-// ============================================
-// 🌐 الصفحة الرئيسية
-// ============================================
 
 app.get('/', (req, res) => {
   res.json({
@@ -148,20 +103,10 @@ app.get('/', (req, res) => {
         send: 'POST /api/email/send',
       },
     },
-    documentation: '/api/health',
-    support: '📧 support@sellin.com',
   });
 });
 
-// ============================================
-// 🚏 ROUTES
-// ============================================
-
 app.use('/api', apiRoutes);
-
-// ============================================
-// 🏥 HEALTH CHECK
-// ============================================
 
 app.get('/health', (req, res) => {
   res.json({
@@ -178,48 +123,11 @@ app.get('/health', (req, res) => {
   });
 });
 
-// ============================================
-// ❌ 404 HANDLER
-// ============================================
-
 app.use(notFoundHandler);
-
-// ============================================
-// 🔥 ERROR HANDLER
-// ============================================
-
 app.use(errorHandler);
-
-// ============================================
-// 🔌 SOCKET.IO
-// ============================================
-
-try {
-  initSocket(server);
-  console.log('✅ Auction Socket.IO initialized');
-} catch (error) {
-  console.warn('⚠️ Auction Socket initialization skipped:', error.message);
-}
-
-// ============================================
-// ⏰ CRON JOBS
-// ============================================
-
-scheduleAuctionEnd();
-scheduleCleanup();
-
-// ============================================
-// 🚀 START SERVER
-// ============================================
 
 async function startServer() {
   try {
-    await getDatabase().connect();
-    console.log('✅ Database connected');
-
-    getSupabaseClient();
-    console.log('✅ Supabase initialized');
-
     server.listen(PORT, () => {
       console.log('═'.repeat(50));
       console.log('🚀 Sell In API Server');
@@ -231,16 +139,11 @@ async function startServer() {
       console.log(`🏥 Health: http://localhost:${PORT}/health`);
       console.log('═'.repeat(50));
     });
-
   } catch (error) {
     console.error('❌ Failed to start server:', error.message);
     process.exit(1);
   }
 }
-
-// ============================================
-// 🛑 GRACEFUL SHUTDOWN
-// ============================================
 
 process.on('SIGTERM', () => {
   console.log('🛑 SIGTERM received, shutting down gracefully...');

@@ -1,15 +1,8 @@
-// ============================================
-// 📧 EMAIL ROUTES
-// ============================================
-
 const express = require('express');
 const router = express.Router();
 const emailService = require('../services/email');
 const { emailLimiter } = require('../middleware/rateLimit');
 
-// ============================================
-// 📧 إرسال بريد إلكتروني
-// ============================================
 router.post('/send', emailLimiter, async (req, res) => {
   try {
     const { to, subject, html, text } = req.body;
@@ -32,7 +25,6 @@ router.post('/send', emailLimiter, async (req, res) => {
       subject,
       html,
       text: text || '',
-      requireAuth: false
     });
 
     if (result.success) {

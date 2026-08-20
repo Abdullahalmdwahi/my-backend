@@ -1,5 +1,5 @@
 // ============================================
-// 📧 EMAIL SERVICE - باستخدام Brevo
+// 📧 EMAIL SERVICE
 // ============================================
 
 const nodemailer = require('nodemailer');
@@ -68,7 +68,7 @@ class EmailService {
     this.lastSendTime = Date.now();
   }
 
-  async sendEmail({ to, subject, html, text, requireAuth = false }) {
+  async sendEmail({ to, subject, html, text }) {
     if (!html) {
       return { success: false, error: 'html content is required' };
     }
@@ -97,14 +97,14 @@ class EmailService {
         return { success: true, messageId: info.messageId };
       } catch (error) {
         console.error(`❌ Failed to send email to ${to}:`, error.message);
-        return await this.sendViaApi(to, subject, html, text, requireAuth);
+        return await this.sendViaApi(to, subject, html, text);
       }
     }
 
-    return await this.sendViaApi(to, subject, html, text, requireAuth);
+    return await this.sendViaApi(to, subject, html, text);
   }
 
-  async sendViaApi(to, subject, html, text, requireAuth) {
+  async sendViaApi(to, subject, html, text) {
     try {
       await this.waitIfNeeded();
       const plainText = text || html.replace(/<[^>]*>/g, '').trim();
@@ -112,16 +112,10 @@ class EmailService {
 
       const payload = { to, subject, html: safeHtml, text: plainText };
 
-      const headers = { 'Content-Type': 'application/json' };
-      if (requireAuth) {
-        const token = process.env.API_SECRET_KEY;
-        if (token) headers['Authorization'] = `Bearer ${token}`;
-      }
-
       const response = await axios.post(
         `${this.apiBaseUrl}/api/email/send`,
         payload,
-        { headers, timeout: 30000 }
+        { headers: { 'Content-Type': 'application/json' }, timeout: 30000 }
       );
 
       if (response.data && response.data.success) {
@@ -130,9 +124,9 @@ class EmailService {
 
       return { success: false, error: response.data?.message };
     } catch (error) {
-      console.error(`❌ [API] خطأ في إرسال البريد:`, error.message);
+      console.error(`❌ [API] Error sending email:`, error.message);
       
-      let code = 'غير متاح';
+      let code = 'N/A';
       if (html && typeof html === 'string') {
         const codeMatch = html.match(/<div class="code">([^<]+)<\/div>/);
         if (codeMatch) code = codeMatch[1];
@@ -142,15 +136,11 @@ class EmailService {
         success: true, 
         messageId: `mock-${Date.now()}`,
         simulated: true,
-        warning: '⚠️ تم استخدام المحاكاة',
+        warning: '⚠️ Simulation used',
         code: code
       };
     }
   }
-
-  // ============================================
-  // 📧 قوالب الإيميلات
-  // ============================================
 
   async sendVerificationEmail(email, code) {
     const subject = '✅ تفعيل حسابك في Sell In';
@@ -179,10 +169,6 @@ class EmailService {
     const text = this.buildWelcomeEmailText(userName);
     return await this.sendEmail({ to: email, subject, html, text });
   }
-
-  // ============================================
-  // 📝 بناء قوالب HTML
-  // ============================================
 
   buildVerificationEmailHtml(code) {
     return `
