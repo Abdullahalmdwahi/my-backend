@@ -14,9 +14,6 @@ const { limiter, strictLimiter, registerLimiter, emailLimiter } = require('./mid
 const { securityHeaders, sanitizeBody, validateContentType } = require('./middleware/security');
 const apiRoutes = require('./routes/api');
 
-// ✅ إضافة Email Queue
-const emailQueue = require('./services/emailQueue');
-
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
@@ -53,6 +50,7 @@ app.use(cors({
 
 app.use(compression({ level: 6, threshold: 1024 }));
 
+// ✅ زيادة Timeout لـ Body Parser
 app.use(bodyParser.json({ 
   limit: '50mb',
   verify: (req, res, buf) => {
@@ -67,6 +65,17 @@ app.use(bodyParser.json({
     }
   }
 }));
+
+// ✅ إضافة Timeout للطلبات
+app.use((req, res, next) => {
+  req.setTimeout(60000, () => {
+    res.status(408).json({
+      success: false,
+      message: '⚠️ انتهت مهلة الطلب',
+    });
+  });
+  next();
+});
 
 app.use(bodyParser.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -124,7 +133,6 @@ app.get('/', (req, res) => {
       },
       email: {
         send: 'POST /api/email/send',
-        queueStatus: 'GET /api/email/queue/status',
       },
     },
   });
@@ -133,32 +141,10 @@ app.get('/', (req, res) => {
 app.use('/api', apiRoutes);
 
 // ============================================
-// ✅ EMAIL QUEUE STATUS (مراقبة)
-// ============================================
-
-app.get('/api/email/queue/status', (req, res) => {
-  try {
-    const status = emailQueue.getStatus();
-    res.json({
-      success: true,
-      data: status,
-      timestamp: new Date().toISOString(),
-    });
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      message: '❌ فشل جلب حالة الطابور',
-      error: error.message,
-    });
-  }
-});
-
-// ============================================
 // 🏥 HEALTH CHECK
 // ============================================
 
 app.get('/health', (req, res) => {
-  const queueStatus = emailQueue.getStatus();
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
@@ -170,12 +156,6 @@ app.get('/health', (req, res) => {
     },
     environment: process.env.NODE_ENV || 'development',
     version: process.env.APP_VERSION || '1.0.0',
-    emailQueue: {
-      queueLength: queueStatus.queueLength,
-      processing: queueStatus.processing,
-      totalProcessed: queueStatus.totalProcessed,
-      totalFailed: queueStatus.totalFailed,
-    },
   });
 });
 
@@ -200,7 +180,6 @@ async function startServer() {
       console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`📧 Email: ${process.env.BREVO_FROM_EMAIL}`);
       console.log(`🗄️ Supabase: ${process.env.SUPABASE_URL ? '✅ Connected' : '❌ Not connected'}`);
-      console.log(`📊 Email Queue: Ready (${emailQueue.getStatus().queueLength} pending)`);
       console.log(`🏥 Health: http://localhost:${PORT}/health`);
       console.log('═'.repeat(50));
     });
@@ -210,15 +189,10 @@ async function startServer() {
   }
 }
 
-// ============================================
-// 🛑 GRACEFUL SHUTDOWN
-// ============================================
-
 process.on('SIGTERM', () => {
   console.log('🛑 SIGTERM received, shutting down gracefully...');
   server.close(() => {
     console.log('✅ Server closed');
-    console.log(`📊 Email Queue stats: ${emailQueue.getStatus().totalProcessed} processed, ${emailQueue.getStatus().totalFailed} failed`);
     process.exit(0);
   });
 });
@@ -227,11 +201,10 @@ process.on('SIGINT', () => {
   console.log('🛑 SIGINT received, shutting down gracefully...');
   server.close(() => {
     console.log('✅ Server closed');
-    console.log(`📊 Email Queue stats: ${emailQueue.getStatus().totalProcessed} processed, ${emailQueue.getStatus().totalFailed} failed`);
     process.exit(0);
   });
 });
 
 startServer();
 
-module.exports = { app, server, emailQueue };
+module.exports = { app, server };

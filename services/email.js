@@ -1,137 +1,118 @@
 // ============================================
-// 📧 EMAIL SERVICE - مع Queue
+// 📧 EMAIL SERVICE - استخدام Brevo API مباشرة
 // ============================================
 
-const nodemailer = require('nodemailer');
 const axios = require('axios');
 const dotenv = require('dotenv');
-const emailQueue = require('./emailQueue');
 
 dotenv.config();
 
 class EmailService {
   constructor() {
-    this.transporter = null;
-    this.apiBaseUrl = process.env.API_BASE_URL || 'https://my-backend-hvha.onrender.com';
-    this.initializeTransporter();
+    this.brevoApiKey = process.env.BREVO_API_KEY;
+    this.fromEmail = process.env.BREVO_FROM_EMAIL || 'no-reply@mail.sell-in.app';
+    this.fromName = process.env.BREVO_FROM_NAME || 'Sell In';
+    this.maxRetries = 3;
+    this.retryDelay = 3000;
+    this.timeout = 30000;
   }
 
-  initializeTransporter() {
-    try {
-      const smtpConfig = {
-        host: process.env.SMTP_HOST || 'smtp-relay.brevo.com',
-        port: parseInt(process.env.SMTP_PORT || '587'),
-        secure: false,
-        auth: {
-          user: process.env.SMTP_USER || process.env.BREVO_FROM_EMAIL,
-          pass: process.env.SMTP_PASSWORD || process.env.BREVO_API_KEY,
-        },
-        tls: {
-          rejectUnauthorized: false,
-        },
-        connectionTimeout: 30000,
-        greetingTimeout: 30000,
-        socketTimeout: 30000,
-      };
-
-      console.log('📧 محاولة الاتصال بـ Brevo SMTP...');
-      this.transporter = nodemailer.createTransport(smtpConfig);
-      this.verifyConnection();
-    } catch (error) {
-      console.error('❌ فشل تهيئة خدمة البريد:', error.message);
-      this.transporter = null;
-    }
-  }
-
-  async verifyConnection() {
-    if (!this.transporter) return false;
-    try {
-      await this.transporter.verify();
-      console.log('✅ Brevo connection verified successfully!');
-      return true;
-    } catch (error) {
-      console.error('❌ Brevo connection failed:', error.message);
-      this.transporter = null;
-      return false;
-    }
-  }
-
-  // ✅ الإرسال عبر Queue (الطريقة الرئيسية)
+  // ✅ الإرسال عبر Brevo API مباشرة
   async sendEmail({ to, subject, html, text }) {
     if (!html) {
       return { success: false, error: 'html content is required' };
     }
 
-    try {
-      const result = await emailQueue.add({
-        to,
-        subject,
-        html,
-        text: text || html.replace(/<[^>]*>/g, '').trim(),
-      });
-      return result;
-    } catch (error) {
-      console.error(`❌ Failed to send email to ${to}:`, error.message);
-      
-      // ✅ محاولة المحاكاة في حالة الفشل النهائي
-      return this.simulateEmailSend(to, html);
+    console.log(`📧 إرسال بريد إلى: ${to}`);
+    console.log(`📌 الموضوع: ${subject}`);
+
+    let attempt = 0;
+    let lastError = null;
+
+    while (attempt < this.maxRetries) {
+      attempt++;
+      try {
+        const result = await Promise.race([
+          this._sendViaBrevoApi({ to, subject, html, text }),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(`Timeout after ${this.timeout}ms`)), this.timeout)
+          )
+        ]);
+
+        if (result.success) {
+          console.log(`✅ Email sent to ${to} (attempt ${attempt})`);
+          return result;
+        }
+        throw new Error(result.error || 'Send failed');
+      } catch (error) {
+        lastError = error;
+        console.error(`❌ Attempt ${attempt}/${this.maxRetries} failed:`, error.message);
+        
+        if (attempt < this.maxRetries) {
+          const delay = this.retryDelay * Math.pow(2, attempt - 1);
+          console.log(`⏳ Retry ${attempt + 1}/${this.maxRetries} in ${delay}ms`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      }
     }
+
+    // ✅ محاكاة في حالة الفشل النهائي
+    console.error(`❌ All ${this.maxRetries} attempts failed for ${to}`);
+    return this.simulateEmailSend(to, html);
   }
 
-  // ✅ الإرسال المباشر (للحالات الطارئة)
-  async sendEmailDirect({ to, subject, html, text }) {
-    if (!this.transporter) {
-      return this.sendEmailViaApi({ to, subject, html, text });
-    }
-
+  // ✅ الإرسال عبر Brevo API
+  async _sendViaBrevoApi({ to, subject, html, text }) {
     try {
       const plainText = text || html.replace(/<[^>]*>/g, '').trim();
-      const mailOptions = {
-        from: `"${process.env.BREVO_FROM_NAME || 'Sell In'}" <${process.env.BREVO_FROM_EMAIL}>`,
-        to: to,
+      
+      const payload = {
+        sender: {
+          name: this.fromName,
+          email: this.fromEmail,
+        },
+        to: [
+          {
+            email: to,
+            name: to.split('@')[0] || 'User',
+          }
+        ],
         subject: subject,
-        html: html,
-        text: plainText,
+        htmlContent: html,
+        textContent: plainText,
       };
 
-      const info = await Promise.race([
-        this.transporter.sendMail(mailOptions),
-        new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Email timeout after 30 seconds')), 30000)
-        )
-      ]);
-
-      console.log(`✅ Email sent to ${to}: ${info.messageId}`);
-      return { success: true, messageId: info.messageId };
-    } catch (error) {
-      console.error(`❌ Failed to send email to ${to}:`, error.message);
-      return this.sendEmailViaApi({ to, subject, html, text });
-    }
-  }
-
-  // ✅ الإرسال عبر API
-  async sendEmailViaApi({ to, subject, html, text }) {
-    try {
-      const plainText = text || html.replace(/<[^>]*>/g, '').trim();
-      const payload = { to, subject, html, text: plainText };
-
       const response = await axios.post(
-        `${this.apiBaseUrl}/api/email/send`,
+        'https://api.brevo.com/v3/smtp/email',
         payload,
         {
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'api-key': this.brevoApiKey,
+          },
           timeout: 30000,
         }
       );
 
-      if (response.data && response.data.success) {
-        return { success: true, messageId: response.data.messageId || 'api-sent' };
+      if (response.data && response.data.messageId) {
+        return {
+          success: true,
+          messageId: response.data.messageId,
+          simulated: false,
+        };
       }
 
-      return { success: false, error: response.data?.message };
+      return { success: false, error: 'No messageId received' };
     } catch (error) {
-      console.error(`❌ [API] Error sending email:`, error.message);
-      return this.simulateEmailSend(to, html);
+      console.error(`❌ Brevo API failed:`, error.response?.data || error.message);
+      
+      // ✅ إذا كان الخطأ بسبب IP، حاول مرة أخرى
+      if (error.response?.data?.code === 'unauthorized') {
+        console.log(`⚠️ IP not authorized, will retry...`);
+        throw new Error('IP not authorized, retrying...');
+      }
+      
+      return { success: false, error: error.message };
     }
   }
 
@@ -143,11 +124,14 @@ class EmailService {
       if (codeMatch) code = codeMatch[1];
     }
     
+    console.log(`📧 [محاكاة] إرسال بريد إلى: ${to}`);
+    console.log(`📧 [محاكاة] رمز التحقق: ${code}`);
+    
     return {
       success: true,
       messageId: `mock-${Date.now()}`,
       simulated: true,
-      warning: '⚠️ Simulation used',
+      warning: '⚠️ تم استخدام المحاكاة بسبب فشل الإرسال الفعلي',
       code: code,
     };
   }
