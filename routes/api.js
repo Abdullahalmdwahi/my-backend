@@ -5,15 +5,13 @@
 const express = require('express');
 const router = express.Router();
 
-// ✅ تعريف كل متغير مرة واحدة فقط
-const authRoutes = require('./auth');
-const emailRoutes = require('./email');
+// ✅ استخدم الأسماء الصحيحة للملفات
+const authRoutes = require('./authRoutes');   // ✅ authRoutes.js موجود
+const emailRoutes = require('./email');       // ✅ email.js موجود
 
-// ✅ استخدام المسارات
 router.use('/auth', authRoutes);
 router.use('/email', emailRoutes);
 
-// ✅ Health check
 router.get('/health', (req, res) => {
   res.json({
     success: true,
