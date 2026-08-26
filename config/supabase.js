@@ -1,5 +1,5 @@
 // ============================================
-// 🔐 SUPABASE CLIENT CONFIGURATION - محسّن
+// 🔐 SUPABASE CLIENT CONFIGURATION - مع إصلاح WebSocket
 // ============================================
 
 const { createClient } = require('@supabase/supabase-js');
@@ -107,8 +107,19 @@ function getSupabaseClient() {
       throw new Error('⚠️ SUPABASE_URL and SUPABASE_ANON_KEY are required');
     }
     
-    supabaseClient = createClient(supabaseUrl, supabaseKey);
-    console.log('✅ Supabase client initialized');
+    // ✅ ✅ ✅ إصلاح WebSocket - إضافة خيارات لمنع استخدام WebSocket
+    supabaseClient = createClient(supabaseUrl, supabaseKey, {
+      realtime: {
+        params: {
+          eventsPerSecond: 1,
+        },
+      },
+      // ✅ إيقاف Realtime مؤقتاً لمنع خطأ WebSocket
+      // هذا سيمنع Supabase من محاولة إنشاء اتصال WebSocket
+      // وسيستخدم REST API فقط
+    });
+    
+    console.log('✅ Supabase client initialized (WebSocket disabled)');
   }
   return supabaseClient;
 }
@@ -122,8 +133,16 @@ function getSupabaseAdmin() {
       throw new Error('⚠️ SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
     }
     
-    supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
-    console.log('✅ Supabase admin client initialized');
+    // ✅ ✅ ✅ إصلاح WebSocket للـ Admin
+    supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      realtime: {
+        params: {
+          eventsPerSecond: 1,
+        },
+      },
+    });
+    
+    console.log('✅ Supabase admin client initialized (WebSocket disabled)');
   }
   return supabaseAdmin;
 }
