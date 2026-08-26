@@ -1,5 +1,5 @@
 // ============================================
-// 🚀 SERVER - تم التحديث ✅
+// 🚀 SERVER - النسخة النهائية المحسنة
 // ============================================
 
 const express = require('express');
@@ -9,64 +9,105 @@ const compression = require('compression');
 const morgan = require('morgan');
 const dotenv = require('dotenv');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 
 // Load environment variables
 dotenv.config();
 
-// Import modules - تم تصحيح المسارات ✅
-const { getDatabase } = require('../config/database'); // ✅ من services إلى config
-const { getSupabaseClient } = require('../config/supabase'); // ✅ من services إلى config
-const apiRoutes = require('../routes/api');
-const ticketRoutes = require('../routes/tickets');
-const { errorHandler, notFoundHandler } = require('../middleware/errorHandler');
-const { limiter } = require('../middleware/rateLimit');
-const { securityHeaders, sanitizeBody } = require('../middleware/security');
-const { scheduleAuctionEnd } = require('../cron/endAuctions');
-const { scheduleCleanup } = require('../cron/cleanup');
-const { initSocket } = require('../socket/auctionSocket'); // ✅ من services إلى socket
+// Import modules
+const { getSupabaseClient } = require('./config/supabase');
+const apiRoutes = require('./routes/api');
+const ticketRoutes = require('./routes/tickets');
+const { errorHandler, notFoundHandler } = require('./middleware/errorHandler');
+const { limiter, strictLimiter, registerLimiter, emailLimiter } = require('./middleware/rateLimit');
+const { securityHeaders, sanitizeBody, validateContentType } = require('./middleware/security');
+const { scheduleAuctionEnd } = require('./cron/endAuctions');
+const { scheduleCleanup } = require('./cron/cleanup');
+const { initSocket } = require('./socket/auctionSocket');
 
-// ============================================
-// CREATE EXPRESS APP
-// ============================================
+// Create Express app
 const app = express();
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
 
 // ============================================
-// MIDDLEWARE
+// 📁 LOGS DIRECTORY
+// ============================================
+
+const logDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logDir)) {
+  fs.mkdirSync(logDir, { recursive: true });
+}
+
+// ============================================
+// 🛡️ MIDDLEWARE - محسّن
 // ============================================
 
 // Security Headers
-app.use(helmet());
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      scriptSrc: ["'self'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+}));
+
 app.use(securityHeaders);
 
-// CORS
+// CORS - محسّن
 app.use(cors({
   origin: process.env.CLIENT_URL || '*',
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+  exposedHeaders: ['X-Total-Count', 'X-RateLimit-Limit', 'X-RateLimit-Remaining'],
+  maxAge: 86400,
 }));
 
 // Compression
-app.use(compression());
+app.use(compression({
+  level: 6,
+  threshold: 1024,
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) {
+      return false;
+    }
+    return compression.filter(req, res);
+  },
+}));
 
 // Body Parsers
-app.use(express.json({ limit: '50mb' }));
+app.use(express.json({ 
+  limit: '50mb',
+  verify: (req, res, buf) => {
+    try {
+      JSON.parse(buf);
+    } catch (e) {
+      res.status(400).json({
+        success: false,
+        message: '⚠️ بيانات JSON غير صالحة',
+      });
+      throw new Error('Invalid JSON');
+    }
+  }
+}));
+
 app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
-// Logging
-if (process.env.NODE_ENV !== 'production') {
-  app.use(morgan('dev'));
+// Logging - محسّن
+if (process.env.NODE_ENV === 'production') {
+  app.use(morgan('combined', {
+    stream: fs.createWriteStream(path.join(logDir, 'access.log'), { flags: 'a' }),
+    skip: (req, res) => res.statusCode < 400,
+  }));
 } else {
-  app.use(morgan('combined'));
+  app.use(morgan('dev'));
 }
-
-// Rate Limiting
-app.use('/api', limiter);
-
-// Sanitize Input
-app.use(sanitizeBody);
 
 // Request Logging
 app.use((req, res, next) => {
@@ -75,71 +116,162 @@ app.use((req, res, next) => {
 });
 
 // ============================================
-// ROUTES
+// 🛡️ SECURITY & RATE LIMITING
 // ============================================
+
+app.use(validateContentType);
+app.use('/api', limiter);
+app.use('/api/auth/login', strictLimiter);
+app.use('/api/auth/register', registerLimiter);
+app.use('/api/email/send', emailLimiter);
+app.use(sanitizeBody);
+
+// ============================================
+// 📁 STATIC FILES
+// ============================================
+
+app.use('/uploads', express.static(path.join(__dirname, 'uploads'), { maxAge: '7d' }));
+app.use('/temp', express.static(path.join(__dirname, 'temp')));
+
+// ============================================
+// 🏠 ROUTES
+// ============================================
+
+// Home route
+app.get('/', (req, res) => {
+  res.json({
+    success: true,
+    message: '🚀 مرحباً بك في Sell In API',
+    version: process.env.APP_VERSION || '2.0.0',
+    status: 'online',
+    timestamp: new Date().toISOString(),
+    endpoints: {
+      auth: {
+        register: 'POST /api/auth/register',
+        login: 'POST /api/auth/login',
+        verify: 'POST /api/auth/verify',
+        verifyDevice: 'POST /api/auth/verify-device',
+        me: 'GET /api/auth/me',
+        logout: 'POST /api/auth/logout',
+        forgotPassword: 'POST /api/auth/forgot-password',
+        resetPassword: 'POST /api/auth/reset-password',
+      },
+      email: {
+        send: 'POST /api/email/send',
+      },
+      tickets: {
+        create: 'POST /api/tickets',
+        messages: 'GET /api/tickets/:ticketId/messages',
+        sendMessage: 'POST /api/tickets/:ticketId/messages',
+        userTickets: 'GET /api/tickets/user/:userId',
+        admin: {
+          all: 'GET /api/tickets/admin/all',
+          updateStatus: 'PUT /api/tickets/admin/:ticketId/status',
+          stats: 'GET /api/tickets/admin/stats',
+        },
+      },
+      payments: {
+        methods: 'GET /api/payments/methods',
+        gateways: 'GET /api/payments/gateways',
+        create: 'POST /api/payments',
+        transactions: 'GET /api/payments/transactions',
+        verify: 'POST /api/payments/verify',
+        webhook: 'POST /api/payments/webhook',
+        admin: {
+          transactions: 'GET /api/payments/admin/transactions',
+          approve: 'PUT /api/payments/admin/transactions/:id/approve',
+          reject: 'PUT /api/payments/admin/transactions/:id/reject',
+          stats: 'GET /api/payments/admin/stats',
+        },
+      },
+      wallets: {
+        types: 'GET /api/wallets/types',
+        my: 'GET /api/wallets',
+        balance: 'GET /api/wallets/balance',
+        transactions: 'GET /api/wallets/transactions',
+        addBalance: 'POST /api/wallets/add-balance',
+        verifyCode: 'POST /api/wallets/verify-code',
+        generateCode: 'POST /api/wallets/generate-code',
+        useCode: 'POST /api/wallets/use-code',
+        admin: {
+          all: 'GET /api/wallets/admin/all',
+          create: 'POST /api/wallets/admin/create',
+          update: 'PUT /api/wallets/admin/:id',
+          delete: 'DELETE /api/wallets/admin/:id',
+        },
+      },
+    },
+  });
+});
 
 // API Routes
 app.use('/api', apiRoutes);
-
-// Ticket Routes
 app.use('/api', ticketRoutes);
 
-// Health Check
+// ============================================
+// 🏥 HEALTH CHECK - محسّن
+// ============================================
+
 app.get('/health', (req, res) => {
   res.json({
     status: 'ok',
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
-    memory: process.memoryUsage(),
+    memory: {
+      rss: Math.round(process.memoryUsage().rss / 1024 / 1024) + 'MB',
+      heapTotal: Math.round(process.memoryUsage().heapTotal / 1024 / 1024) + 'MB',
+      heapUsed: Math.round(process.memoryUsage().heapUsed / 1024 / 1024) + 'MB',
+    },
     environment: process.env.NODE_ENV || 'development',
     version: process.env.APP_VERSION || '1.0.0',
+    nodeVersion: process.version,
   });
 });
 
-// 404 Handler
-app.use(notFoundHandler);
+// ============================================
+// ❌ ERROR HANDLERS
+// ============================================
 
-// Error Handler
+app.use(notFoundHandler);
 app.use(errorHandler);
 
 // ============================================
-// SOCKET.IO
+// 🔌 SOCKET.IO
 // ============================================
 
 const io = initSocket(server);
 
 // ============================================
-// CRON JOBS
+// ⏰ CRON JOBS
 // ============================================
 
-// Schedule auction end check (every 5 minutes)
 scheduleAuctionEnd();
-
-// Schedule cleanup (daily at midnight)
 scheduleCleanup();
 
 // ============================================
-// START SERVER
+// 🚀 START SERVER
 // ============================================
 
 async function startServer() {
   try {
-    // Connect to database
-    await getDatabase().connect();
-    console.log('✅ Database connected');
-
     // Initialize Supabase
     getSupabaseClient();
     console.log('✅ Supabase initialized');
 
     // Start server
     server.listen(PORT, () => {
-      console.log(`🚀 Server running on port ${PORT}`);
-      console.log(`📡 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`🔗 API URL: http://localhost:${PORT}/api`);
+      console.log('═'.repeat(50));
+      console.log('🚀 Sell In API Server');
+      console.log('═'.repeat(50));
+      console.log(`📡 Port: ${PORT}`);
+      console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`📧 Email: ${process.env.BREVO_FROM_EMAIL || 'Not set'}`);
+      console.log(`🗄️ Supabase: ${process.env.SUPABASE_URL ? '✅ Connected' : '❌ Not connected'}`);
+      console.log(`🏥 Health: http://localhost:${PORT}/health`);
       console.log(`🔌 Socket.IO: ws://localhost:${PORT}`);
-      console.log(`📊 Health Check: http://localhost:${PORT}/health`);
-      console.log(`✅ All services initialized successfully`);
+      console.log(`🔄 Version: ${process.env.APP_VERSION || '1.0.0'}`);
+      console.log(`📦 Node: ${process.version}`);
+      console.log('═'.repeat(50));
     });
 
   } catch (error) {
@@ -149,7 +281,7 @@ async function startServer() {
 }
 
 // ============================================
-// GRACEFUL SHUTDOWN
+// 🛑 GRACEFUL SHUTDOWN
 // ============================================
 
 process.on('SIGTERM', () => {
@@ -169,13 +301,9 @@ process.on('SIGINT', () => {
 });
 
 // ============================================
-// START
+// 🚀 START
 // ============================================
 
 startServer();
-
-// ============================================
-// EXPORTS FOR TESTING
-// ============================================
 
 module.exports = { app, server, io };

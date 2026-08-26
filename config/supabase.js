@@ -1,8 +1,9 @@
 // ============================================
-// 🔐 SUPABASE CLIENT CONFIGURATION
+// 🔐 SUPABASE CLIENT CONFIGURATION - محسّن
 // ============================================
 
 const { createClient } = require('@supabase/supabase-js');
+const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
 // ============================================
@@ -91,7 +92,7 @@ const TABLES = {
 };
 
 // ============================================
-// 🔐 SUPABASE CLIENT
+// 🔐 SUPABASE CLIENTS
 // ============================================
 
 let supabaseClient = null;
@@ -127,6 +128,10 @@ function getSupabaseAdmin() {
   return supabaseAdmin;
 }
 
+// ============================================
+// 🛠️ HELPER FUNCTIONS
+// ============================================
+
 function isValidUUID(id) {
   if (!id) return false;
   if (typeof id !== 'string') return false;
@@ -142,7 +147,7 @@ function toSafeId(id) {
 }
 
 function generateUUID() {
-  return crypto.randomUUID();
+  return uuidv4();
 }
 
 function generateShortId() {
@@ -197,16 +202,9 @@ async function deleteFile(bucket, path) {
   return data;
 }
 
-async function enableRLS(table) {
-  const admin = getSupabaseAdmin();
-  console.log(`⚠️ RLS for ${table} must be enabled via SQL`);
-  return true;
-}
-
-async function createRLSPolicy(table, name, definition) {
-  console.log(`⚠️ RLS policy for ${table} must be created via SQL`);
-  return true;
-}
+// ============================================
+// 📊 QUERY BUILDER
+// ============================================
 
 function buildQuery(table, filters = {}, options = {}) {
   const client = getSupabaseClient();
@@ -244,6 +242,10 @@ function buildQuery(table, filters = {}, options = {}) {
   return query;
 }
 
+// ============================================
+// 📤 EXPORTS
+// ============================================
+
 module.exports = {
   TABLES,
   getSupabaseClient,
@@ -258,7 +260,5 @@ module.exports = {
   uploadFile,
   getPublicUrl,
   deleteFile,
-  enableRLS,
-  createRLSPolicy,
   buildQuery,
 };

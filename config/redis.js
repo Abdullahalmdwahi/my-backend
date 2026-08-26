@@ -1,5 +1,5 @@
 // ============================================
-// 🔴 REDIS CONFIGURATION (Optional)
+// 🔴 REDIS CONFIGURATION (اختياري)
 // ============================================
 
 const redis = require('redis');
@@ -126,59 +126,7 @@ async function clearCache(pattern = '*') {
 }
 
 // ============================================
-// 🔐 SESSION HELPERS
-// ============================================
-
-async function setSession(userId, sessionData, expirySeconds = 86400) {
-  return setCache(`session:${userId}`, sessionData, expirySeconds);
-}
-
-async function getSession(userId) {
-  return getCache(`session:${userId}`);
-}
-
-async function deleteSession(userId) {
-  return deleteCache(`session:${userId}`);
-}
-
-async function setToken(token, userId, expirySeconds = 3600) {
-  return setCache(`token:${token}`, { userId }, expirySeconds);
-}
-
-async function verifyToken(token) {
-  const data = await getCache(`token:${token}`);
-  return data ? data.userId : null;
-}
-
-// ============================================
-// 📊 RATE LIMITING HELPERS
-// ============================================
-
-async function incrementRateLimit(key, windowSeconds = 60, maxRequests = 100) {
-  if (!isRedisAvailable || !redisClient) {
-    return { allowed: true, remaining: maxRequests - 1 };
-  }
-  
-  try {
-    const current = await redisClient.incr(key);
-    if (current === 1) {
-      await redisClient.expire(key, windowSeconds);
-    }
-    
-    const allowed = current <= maxRequests;
-    return {
-      allowed,
-      remaining: Math.max(0, maxRequests - current),
-      reset: await redisClient.ttl(key),
-    };
-  } catch (error) {
-    console.warn('⚠️ Rate limit error:', error.message);
-    return { allowed: true, remaining: maxRequests - 1 };
-  }
-}
-
-// ============================================
-// 📦 EXPORTS
+// 📤 EXPORTS
 // ============================================
 
 module.exports = {
@@ -187,12 +135,6 @@ module.exports = {
   setCache,
   deleteCache,
   clearCache,
-  setSession,
-  getSession,
-  deleteSession,
-  setToken,
-  verifyToken,
-  incrementRateLimit,
   get isAvailable() { return isRedisAvailable; },
   get client() { return redisClient; },
 };

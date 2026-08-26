@@ -1,15 +1,26 @@
-// 📁 config/database.js - إضافة نظام Caching متقدم
+// ============================================
+// 🗄️ DATABASE - مع Caching متقدم
+// ============================================
+
 const NodeCache = require('node-cache');
+const { getSupabaseClient, toSafeId } = require('./supabase');
+
+// Cache configuration
 const cache = new NodeCache({
   stdTTL: 300, // 5 دقائق
   checkperiod: 60,
-  useClones: false
+  useClones: false,
 });
 
 class Database {
   constructor() {
     this.supabase = null;
     this.cache = cache;
+  }
+
+  connect() {
+    this.supabase = getSupabaseClient();
+    return this;
   }
 
   // ✅ استعلام مع Caching
@@ -51,4 +62,49 @@ class Database {
       }
     }
   }
+
+  // ✅ تحويل آمن للمعرف
+  toSafeId(id) {
+    return toSafeId(id);
+  }
+
+  // ✅ توليد UUID
+  generateUUID() {
+    const { v4: uuidv4 } = require('uuid');
+    return uuidv4();
+  }
+
+  // ✅ توليد معرف قصير
+  generateShortId() {
+    return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+  }
+
+  // ✅ التحقق من صحة المعرف
+  isValidId(id) {
+    if (!id) return false;
+    if (typeof id === 'number') return id > 0;
+    if (typeof id === 'string') {
+      const parsed = parseInt(id);
+      return !isNaN(parsed) && parsed > 0;
+    }
+    return false;
+  }
 }
+
+// ============================================
+// 📤 EXPORTS
+// ============================================
+
+let instance = null;
+
+function getDatabase() {
+  if (!instance) {
+    instance = new Database();
+  }
+  return instance;
+}
+
+module.exports = {
+  getDatabase,
+  Database,
+};

@@ -121,7 +121,7 @@ class EmailQueue extends EventEmitter {
 
     for (let attempt = 1; attempt <= this.maxRetries; attempt++) {
       try {
-        const result = await emailService._sendEmailDirect({
+        const result = await emailService.sendEmail({
           to: item.to,
           subject: item.subject,
           html: item.html,

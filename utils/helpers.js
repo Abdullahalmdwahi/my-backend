@@ -1,5 +1,5 @@
 // ============================================
-// 🛠️ HELPER FUNCTIONS
+// 🛠️ HELPER FUNCTIONS - محسّن
 // ============================================
 
 const crypto = require('crypto');
@@ -168,7 +168,6 @@ function formatPrice(price, currency = 'YER') {
   };
   
   const symbol = symbols[currency] || currency;
-  // ✅ إصلاح: تحويل آمن إلى Number
   const numericPrice = typeof price === 'string' ? parseFloat(price) : price;
   const formatted = Number(numericPrice).toFixed(2);
   
@@ -247,7 +246,7 @@ function isEmpty(obj) {
 }
 
 // ============================================
-//🔄 ARRAY HELPERS
+// 🔄 ARRAY HELPERS
 // ============================================
 
 function unique(arr) {
@@ -356,7 +355,7 @@ function formatFileSize(bytes) {
 }
 
 // ============================================
-//🌐 URL HELPERS
+// 🌐 URL HELPERS
 // ============================================
 
 function isValidUrl(url) {
@@ -396,7 +395,7 @@ function cleanArray(arr) {
 }
 
 // ============================================
-// 📦 EXPORTS
+// 📤 EXPORTS
 // ============================================
 
 module.exports = {

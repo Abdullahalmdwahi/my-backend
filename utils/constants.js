@@ -1,5 +1,5 @@
 // ============================================
-// 📌 CONSTANTS
+// 📌 CONSTANTS - محسّن
 // ============================================
 
 // ============================================
@@ -185,7 +185,7 @@ const NOTIFICATION_TYPES = {
 };
 
 // ============================================
-//🔒 AUTH CONSTANTS
+// 🔒 AUTH CONSTANTS
 // ============================================
 
 const TOKEN_TYPES = {
@@ -239,24 +239,7 @@ const SUPPORTED_COUNTRIES = {
 };
 
 // ============================================
-// 🔐 SECURITY CONSTANTS
-// ============================================
-
-const MAX_LOGIN_ATTEMPTS = 5;
-const LOGIN_BLOCK_DURATION_MINUTES = 15;
-const MAX_BIOMETRIC_ATTEMPTS = 7;
-const BIOMETRIC_LOCK_DURATION_MINUTES = 15;
-
-// ============================================
-// 📊 PAGINATION
-// ============================================
-
-const DEFAULT_PAGE = 1;
-const DEFAULT_LIMIT = 20;
-const MAX_LIMIT = 100;
-
-// ============================================
-//🏷️ CATEGORY CONSTANTS
+// 🏷️ CATEGORY CONSTANTS
 // ============================================
 
 const CATEGORY_IDS = {
@@ -297,7 +280,7 @@ const CATEGORY_NAMES = {
 };
 
 // ============================================
-// 📦 EXPORTS
+// 📤 EXPORTS
 // ============================================
 
 module.exports = {
@@ -322,13 +305,6 @@ module.exports = {
   VERIFICATION_METHODS,
   LIMITS,
   SUPPORTED_COUNTRIES,
-  MAX_LOGIN_ATTEMPTS,
-  LOGIN_BLOCK_DURATION_MINUTES,
-  MAX_BIOMETRIC_ATTEMPTS,
-  BIOMETRIC_LOCK_DURATION_MINUTES,
-  DEFAULT_PAGE,
-  DEFAULT_LIMIT,
-  MAX_LIMIT,
   CATEGORY_IDS,
   CATEGORY_NAMES,
 };

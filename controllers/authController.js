@@ -1,10 +1,10 @@
 // ============================================
-// 🔐 AUTH CONTROLLER - النسخة المُصلحة
+// 🔐 AUTH CONTROLLER - النسخة المُصلحة النهائية
 // ============================================
 
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid');
-const { getSupabaseClient } = require('../config/supabase');
+const { getSupabaseClient, TABLES } = require('../config/supabase');
 const emailService = require('../services/email');
 const jwtService = require('../services/jwtService');
 const { AppError, ValidationError, AuthError, ConflictError } = require('../middleware/errorHandler');
@@ -357,7 +357,7 @@ const authController = {
   },
 
   // ============================================
-  // ✅ VERIFY DEVICE - المُضافة حديثاً
+  // ✅ VERIFY DEVICE
   // ============================================
   verifyDevice: async (req, res) => {
     try {
@@ -778,7 +778,7 @@ const authController = {
   },
 
   // ============================================
-  // 🔓 FORGOT PASSWORD
+  // 🔓 FORGOT PASSWORD - محسّن
   // ============================================
   forgotPassword: async (req, res) => {
     try {
@@ -814,35 +814,42 @@ const authController = {
 
       res.json({
         success: true,
-        message: '✅ تم إرسال رابط إعادة تعيين كلمة المرور إلى بريدك الإلكتروني',
+        message: '✅ تم إرسال رمز إعادة تعيين كلمة المرور إلى بريدك الإلكتروني',
       });
 
     } catch (error) {
       console.error('❌ Forgot password error:', error);
       res.status(error.statusCode || 500).json({
         success: false,
-        message: error.message || '❌ حدث خطأ أثناء إرسال رابط إعادة التعيين',
+        message: error.message || '❌ حدث خطأ أثناء إرسال رمز إعادة التعيين',
       });
     }
   },
 
   // ============================================
-  // 🔄 RESET PASSWORD
+  // 🔄 RESET PASSWORD - محسّن
   // ============================================
   resetPassword: async (req, res) => {
     try {
       const { email, token, newPassword } = req.body;
 
       if (!email || !token || !newPassword) {
-        throw new ValidationError('⚠️ جميع الحقول مطلوبة');
+        return res.status(400).json({
+          success: false,
+          message: '⚠️ جميع الحقول مطلوبة'
+        });
       }
 
       if (newPassword.length < 6) {
-        throw new ValidationError('⚠️ كلمة المرور يجب أن تكون 6 أحرف على الأقل');
+        return res.status(400).json({
+          success: false,
+          message: '⚠️ كلمة المرور يجب أن تكون 6 أحرف على الأقل'
+        });
       }
 
       const supabase = getSupabaseClient();
 
+      // ✅ التحقق من الرمز
       const { data: resetToken, error } = await supabase
         .from('verification_tokens')
         .select('*')
@@ -853,15 +860,28 @@ const authController = {
         .gt('expires_at', new Date().toISOString())
         .maybeSingle();
 
-      if (error || !resetToken) {
-        throw new ValidationError('❌ الرمز غير صحيح أو منتهي الصلاحية');
+      if (error) {
+        console.error('❌ [resetPassword] خطأ في قاعدة البيانات:', error);
+        return res.status(500).json({
+          success: false,
+          message: '❌ حدث خطأ في قاعدة البيانات'
+        });
       }
 
+      if (!resetToken) {
+        return res.status(400).json({
+          success: false,
+          message: '❌ رمز التحقق غير صحيح أو منتهي الصلاحية'
+        });
+      }
+
+      // ✅ تحديث الرمز كمستخدم
       await supabase
         .from('verification_tokens')
         .update({ is_used: true })
         .eq('id', resetToken.id);
 
+      // ✅ تحديث كلمة المرور
       const hashedPassword = await hashPassword(newPassword);
 
       await supabase
@@ -872,21 +892,22 @@ const authController = {
         })
         .eq('email', email);
 
+      // ✅ حذف جميع توكنات التحديث
       await supabase
         .from('refresh_tokens')
         .delete()
         .eq('user_id', resetToken.user_id);
 
-      res.json({
+      return res.json({
         success: true,
-        message: '✅ تم إعادة تعيين كلمة المرور بنجاح',
+        message: '✅ تم إعادة تعيين كلمة المرور بنجاح'
       });
 
     } catch (error) {
-      console.error('❌ Reset password error:', error);
-      res.status(error.statusCode || 500).json({
+      console.error('❌ [resetPassword] خطأ:', error);
+      return res.status(500).json({
         success: false,
-        message: error.message || '❌ حدث خطأ أثناء إعادة تعيين كلمة المرور',
+        message: '❌ حدث خطأ في الخادم: ' + error.message
       });
     }
   },

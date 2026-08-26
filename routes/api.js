@@ -6,8 +6,8 @@ const express = require('express');
 const router = express.Router();
 
 // ✅ استخدم الأسماء الصحيحة للملفات
-const authRoutes = require('./authRoutes');   // ✅ authRoutes.js موجود
-const emailRoutes = require('./email');       // ✅ email.js موجود
+const authRoutes = require('./authRoutes');
+const emailRoutes = require('./email');
 
 router.use('/auth', authRoutes);
 router.use('/email', emailRoutes);
