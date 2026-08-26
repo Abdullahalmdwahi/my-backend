@@ -1,5 +1,5 @@
 // ============================================
-// 🔐 SUPABASE CLIENT CONFIGURATION - مع إصلاح WebSocket
+// 🔐 SUPABASE CLIENT CONFIGURATION
 // ============================================
 
 const { createClient } = require('@supabase/supabase-js');
@@ -17,77 +17,31 @@ const TABLES = {
   products: 'products',
   pendingProducts: 'pending_products',
   productImages: 'product_images',
-  productGuarantees: 'product_guarantees',
-  productOffers: 'product_offers',
-  productComments: 'product_comments',
   categories: 'categories',
-  customCategories: 'custom_categories',
-  favorites: 'favorites',
-  comments: 'comments',
-  ratings: 'ratings',
   orders: 'orders',
   orderMessages: 'order_messages',
   orderStatusHistory: 'order_status_history',
   auctions: 'auctions',
   bids: 'bids',
   auctionImages: 'auction_images',
-  auctionHistory: 'auction_history',
-  auctionCategories: 'auction_categories',
-  auctionSubscriptions: 'auction_subscriptions',
-  userAuctionSubscriptions: 'user_auction_subscriptions',
   subscriptions: 'subscriptions',
   userSubscriptions: 'user_subscriptions',
-  subscriptionPrices: 'subscription_prices',
   paymentTransactions: 'payment_transactions',
   paymentMethods: 'payment_methods',
-  paymentGateways: 'payment_gateways',
-  paymentWebhookLogs: 'payment_webhook_logs',
   wallets: 'wallets',
   walletTypes: 'wallet_types',
   walletCodes: 'wallet_codes',
   walletTransactions: 'wallet_transactions',
-  walletVerifications: 'wallet_verifications',
-  walletWebhookLogs: 'wallet_webhook_logs',
-  purchaseCodes: 'purchase_codes',
-  userWallets: 'user_wallets',
   notifications: 'notifications',
   globalNotifications: 'global_notifications',
   adminNotifications: 'admin_notifications',
-  notificationLogs: 'notification_logs',
   verificationTokens: 'verification_tokens',
-  deviceTokens: 'device_tokens',
   devices: 'devices',
   sessions: 'sessions',
   userLogins: 'user_logins',
   userLocations: 'user_locations',
-  userVerifications: 'user_verifications',
-  userPoints: 'user_points',
-  pointsTransactions: 'points_transactions',
-  forcedAds: 'forced_ads',
-  adCampaigns: 'ad_campaigns',
-  adHistory: 'ad_history',
-  adRemovalPurchases: 'ad_removal_purchases',
-  campaignPackages: 'campaign_packages',
-  appSettings: 'app_settings',
-  appFilters: 'app_filters',
-  appStats: 'app_stats',
-  appSync: 'app_sync',
-  securityEvents: 'security_events',
   supportTickets: 'support_tickets',
   ticketMessages: 'ticket_messages',
-  chatMessages: 'chat_messages',
-  successStories: 'success_stories',
-  referrals: 'referrals',
-  reports: 'reports',
-  smartFilters: 'smart_filters',
-  categoryFilters: 'category_filters',
-  countries: 'countries',
-  invoices: 'invoices',
-  approvalRequests: 'approval_requests',
-  adminActivityLog: 'admin_activity_log',
-  aiSuggestions: 'ai_suggestions',
-  questions: 'questions',
-  answers: 'answers',
   refresh_tokens: 'refresh_tokens',
 };
 
@@ -109,15 +63,19 @@ function getSupabaseClient() {
     
     // ✅ ✅ ✅ إصلاح WebSocket - تعطيل Realtime بالكامل
     supabaseClient = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+      },
+      // ✅ تعطيل Realtime تماماً
       realtime: {
         params: {
           eventsPerSecond: 1,
         },
       },
-      // ✅ إيقاف Realtime مؤقتاً
-      // هذا يمنع Supabase من محاولة إنشاء اتصال WebSocket
     });
     
+    // ✅ منع محاولة الاتصال بـ WebSocket
     console.log('✅ Supabase client initialized (Realtime disabled)');
   }
   return supabaseClient;
@@ -132,8 +90,11 @@ function getSupabaseAdmin() {
       throw new Error('⚠️ SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
     }
     
-    // ✅ ✅ ✅ إصلاح WebSocket للـ Admin
     supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+      },
       realtime: {
         params: {
           eventsPerSecond: 1,
@@ -221,46 +182,6 @@ async function deleteFile(bucket, path) {
 }
 
 // ============================================
-// 📊 QUERY BUILDER
-// ============================================
-
-function buildQuery(table, filters = {}, options = {}) {
-  const client = getSupabaseClient();
-  let query = client.from(table).select(options.select || '*');
-  
-  for (const [key, value] of Object.entries(filters)) {
-    if (Array.isArray(value)) {
-      query = query.in(key, value);
-    } else if (typeof value === 'object' && value !== null) {
-      if (value.gte) query = query.gte(key, value.gte);
-      if (value.lte) query = query.lte(key, value.lte);
-      if (value.gt) query = query.gt(key, value.gt);
-      if (value.lt) query = query.lt(key, value.lt);
-      if (value.neq) query = query.neq(key, value.neq);
-      if (value.like) query = query.ilike(key, value.like);
-    } else {
-      query = query.eq(key, value);
-    }
-  }
-  
-  if (options.orderBy) {
-    query = query.order(options.orderBy, { 
-      ascending: options.ascending !== false 
-    });
-  }
-  
-  if (options.limit) {
-    query = query.limit(options.limit);
-  }
-  
-  if (options.offset) {
-    query = query.range(options.offset, options.offset + (options.limit || 20) - 1);
-  }
-  
-  return query;
-}
-
-// ============================================
 // 📤 EXPORTS
 // ============================================
 
@@ -278,5 +199,4 @@ module.exports = {
   uploadFile,
   getPublicUrl,
   deleteFile,
-  buildQuery,
 };
