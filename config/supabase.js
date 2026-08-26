@@ -107,19 +107,18 @@ function getSupabaseClient() {
       throw new Error('⚠️ SUPABASE_URL and SUPABASE_ANON_KEY are required');
     }
     
-    // ✅ ✅ ✅ إصلاح WebSocket - إضافة خيارات لمنع استخدام WebSocket
+    // ✅ ✅ ✅ إصلاح WebSocket - تعطيل Realtime بالكامل
     supabaseClient = createClient(supabaseUrl, supabaseKey, {
       realtime: {
         params: {
           eventsPerSecond: 1,
         },
       },
-      // ✅ إيقاف Realtime مؤقتاً لمنع خطأ WebSocket
-      // هذا سيمنع Supabase من محاولة إنشاء اتصال WebSocket
-      // وسيستخدم REST API فقط
+      // ✅ إيقاف Realtime مؤقتاً
+      // هذا يمنع Supabase من محاولة إنشاء اتصال WebSocket
     });
     
-    console.log('✅ Supabase client initialized (WebSocket disabled)');
+    console.log('✅ Supabase client initialized (Realtime disabled)');
   }
   return supabaseClient;
 }
@@ -142,7 +141,7 @@ function getSupabaseAdmin() {
       },
     });
     
-    console.log('✅ Supabase admin client initialized (WebSocket disabled)');
+    console.log('✅ Supabase admin client initialized (Realtime disabled)');
   }
   return supabaseAdmin;
 }
