@@ -1,3 +1,7 @@
+// ============================================
+// 🚀 APP - النسخة النهائية مع trust proxy
+// ============================================
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -15,8 +19,16 @@ const { securityHeaders, sanitizeBody, validateContentType } = require('./middle
 const apiRoutes = require('./routes/api');
 
 const app = express();
+
+// ✅ ✅ ✅ إضافة trust proxy لـ Render (لإصلاح تحذير express-rate-limit)
+app.set('trust proxy', 1);
+
 const server = http.createServer(app);
 const PORT = process.env.PORT || 3000;
+
+// ============================================
+// 📁 LOGS DIRECTORY
+// ============================================
 
 const logDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logDir)) {
@@ -27,6 +39,7 @@ if (!fs.existsSync(logDir)) {
 // 🛡️ MIDDLEWARE
 // ============================================
 
+// Security Headers
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -39,6 +52,8 @@ app.use(helmet({
 }));
 
 app.use(securityHeaders);
+
+// CORS
 app.use(cors({
   origin: '*',
   credentials: true,
@@ -48,8 +63,10 @@ app.use(cors({
   maxAge: 86400,
 }));
 
+// Compression
 app.use(compression({ level: 6, threshold: 1024 }));
 
+// Body Parsers
 app.use(bodyParser.json({ 
   limit: '50mb',
   verify: (req, res, buf) => {
@@ -166,7 +183,7 @@ async function startServer() {
       console.log('═'.repeat(50));
       console.log(`📡 Port: ${PORT}`);
       console.log(`🔒 Environment: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`📧 Email: ${process.env.BREVO_FROM_EMAIL}`);
+      console.log(`📧 Email: ${process.env.BREVO_FROM_EMAIL || 'Not set'}`);
       console.log(`🗄️ Supabase: ${process.env.SUPABASE_URL ? '✅ Connected' : '❌ Not connected'}`);
       console.log(`🏥 Health: http://localhost:${PORT}/health`);
       console.log('═'.repeat(50));
@@ -176,6 +193,10 @@ async function startServer() {
     process.exit(1);
   }
 }
+
+// ============================================
+// 🛑 GRACEFUL SHUTDOWN
+// ============================================
 
 process.on('SIGTERM', () => {
   console.log('🛑 SIGTERM received, shutting down gracefully...');
@@ -192,6 +213,10 @@ process.on('SIGINT', () => {
     process.exit(0);
   });
 });
+
+// ============================================
+// 🚀 START
+// ============================================
 
 startServer();
 

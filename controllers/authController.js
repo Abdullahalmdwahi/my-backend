@@ -1,5 +1,5 @@
 // ============================================
-// 🔐 AUTH CONTROLLER - النسخة المُصلحة النهائية
+// 🔐 AUTH CONTROLLER - النسخة النهائية المُصلحة
 // ============================================
 
 const bcrypt = require('bcrypt');
@@ -100,8 +100,7 @@ const authController = {
         business_name: businessName || '',
         user_type_id: userTypeId || '1',
         specializations: specializations,
-        device_id: deviceId || 'unknown',
-        device_name: deviceName || 'Unknown Device',
+        device_id: deviceId ? String(deviceId).trim() : null,
         role: 'user',
         is_verified: false,
         is_active: true,
@@ -119,6 +118,24 @@ const authController = {
       if (error) {
         console.error('❌ User creation error:', error);
         throw new AppError('❌ فشل إنشاء الحساب', 500, 'DB_ERROR');
+      }
+
+      // ✅ تسجيل الجهاز في جدول devices إذا كان متاحاً
+      if (deviceId) {
+        try {
+          await supabase.from('devices').upsert({
+            user_id: userId,
+            device_id: String(deviceId).trim(),
+            device_name: deviceName || 'Unknown Device',
+            last_seen: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'user_id,device_id',
+          });
+          console.log('✅ تم تسجيل الجهاز للمستخدم الجديد');
+        } catch (deviceError) {
+          console.warn('⚠️ فشل تسجيل الجهاز:', deviceError.message);
+        }
       }
 
       const otp = generateOTP();
@@ -168,12 +185,13 @@ const authController = {
   },
 
   // ============================================
-  // 🔑 LOGIN
+  // 🔑 LOGIN - النسخة المُصلحة بالكامل
   // ============================================
   login: async (req, res) => {
     try {
       console.log('🔐 [LOGIN] Request received');
-      
+      console.log('🔐 [LOGIN] Body:', JSON.stringify(req.body, null, 2));
+
       const { email, password, deviceId, deviceName } = req.body;
 
       if (!email || !password) {
@@ -184,6 +202,7 @@ const authController = {
       }
 
       console.log(`✅ [LOGIN] محاولة للمستخدم: ${email}`);
+      console.log(`📱 [LOGIN] deviceId المستقبل: "${deviceId}" (type: ${typeof deviceId})`);
 
       const supabase = getSupabaseClient();
 
@@ -195,7 +214,7 @@ const authController = {
 
       if (authError || !authData?.user) {
         console.error('❌ [LOGIN] فشل المصادقة:', authError);
-        
+
         if (authError?.message?.includes('Email not confirmed')) {
           return res.status(403).json({
             success: false,
@@ -260,16 +279,75 @@ const authController = {
         });
       }
 
-      // ✅ Step 5: Device verification
-      const deviceIdToCheck = deviceId || 'unknown';
-      const { data: device } = await supabase
+      // ============================================
+      // ✅ Step 5: DEVICE VERIFICATION - النسخة المُصلحة
+      // ============================================
+      
+      // ✅ تحويل deviceId إلى String نظيف
+      const deviceIdToCheck = deviceId ? String(deviceId).trim() : '';
+      
+      console.log(`📱 [LOGIN] Device ID للتحقق: "${deviceIdToCheck}"`);
+
+      // ✅ إذا كان deviceId فارغاً أو غير صالح، تخطى التحقق
+      if (!deviceIdToCheck || 
+          deviceIdToCheck === 'unknown' || 
+          deviceIdToCheck === 'null' ||
+          deviceIdToCheck === '' ||
+          deviceIdToCheck.length < 5) {
+        
+        console.log('⚠️ [LOGIN] deviceId غير صالح أو فارغ - تخطي التحقق من الجهاز');
+        console.log('⚠️ [LOGIN] سيتم تسجيل الدخول مباشرة');
+        
+        // ✅ تسجيل الدخول مباشرة بدون تحقق
+        await supabase
+          .from('users')
+          .update({
+            last_login_at: new Date().toISOString(),
+          })
+          .eq('id', user.id);
+
+        const { accessToken, refreshToken } = generateTokens(user);
+
+        await supabase.from('refresh_tokens').insert({
+          user_id: user.id,
+          token: refreshToken,
+          expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
+          created_at: new Date().toISOString(),
+        });
+
+        delete user.password;
+
+        console.log(`✅ [LOGIN] تسجيل دخول ناجح (بدون جهاز): ${email}`);
+
+        return res.json({
+          success: true,
+          message: '✅ تم تسجيل الدخول بنجاح',
+          data: {
+            user,
+            accessToken,
+            refreshToken,
+          },
+        });
+      }
+
+      // ✅ الآن ابحث عن الجهاز في قاعدة البيانات
+      console.log(`🔍 [LOGIN] البحث عن الجهاز: user_id=${user.id}, device_id="${deviceIdToCheck}"`);
+
+      const { data: device, error: deviceError } = await supabase
         .from('devices')
         .select('*')
         .eq('user_id', user.id)
         .eq('device_id', deviceIdToCheck)
         .maybeSingle();
 
-      if (!device) {
+      if (deviceError) {
+        console.error('❌ [LOGIN] خطأ في البحث عن الجهاز:', deviceError.message);
+        // في حالة الخطأ، نسمح بالدخول (لا نمنع المستخدم)
+        console.log('⚠️ [LOGIN] خطأ في البحث - تخطي التحقق من الجهاز');
+      } else if (!device) {
+        // ✅ جهاز جديد - أرسل رمز تحقق
+        console.log(`📱 [LOGIN] جهاز جديد غير معروف: ${deviceIdToCheck}`);
+        
         const otp = generateOTP();
         
         await supabase.from('verification_tokens').insert({
@@ -304,12 +382,15 @@ const authController = {
         });
       }
 
-      // ✅ Step 6: Update device last seen
+      // ✅ Step 6: جهاز معروف - تحديث last_seen
+      console.log(`✅ [LOGIN] جهاز معروف - تحديث last_seen`);
+      
       await supabase
         .from('devices')
         .update({
           last_seen: new Date().toISOString(),
           device_name: deviceName || device.device_name,
+          updated_at: new Date().toISOString(),
         })
         .eq('id', device.id);
 
@@ -357,11 +438,13 @@ const authController = {
   },
 
   // ============================================
-  // ✅ VERIFY DEVICE
+  // ✅ VERIFY DEVICE - النسخة المُصلحة
   // ============================================
   verifyDevice: async (req, res) => {
     try {
       const { email, code, deviceId, deviceName } = req.body;
+
+      console.log('🔐 [VERIFY_DEVICE] Request:', { email, code, deviceId, deviceName });
 
       if (!email || !code) {
         return res.status(400).json({
@@ -384,6 +467,7 @@ const authController = {
         .maybeSingle();
 
       if (error || !token) {
+        console.log('❌ [VERIFY_DEVICE] رمز غير صحيح أو منتهي');
         return res.status(400).json({
           success: false,
           message: '❌ رمز التحقق غير صحيح أو منتهي الصلاحية'
@@ -404,18 +488,37 @@ const authController = {
         });
       }
 
-      // ✅ تسجيل الجهاز
-      const deviceIdToRegister = deviceId || 'verified-device';
-      await supabase
-        .from('devices')
-        .insert({
-          user_id: user.id,
-          device_id: deviceIdToRegister,
-          device_name: deviceName || 'Verified Device',
-          last_seen: new Date().toISOString(),
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        });
+      // ✅ تحويل deviceId إلى String نظيف
+      const deviceIdToRegister = deviceId ? String(deviceId).trim() : '';
+      const deviceNameToRegister = deviceName ? String(deviceName).trim() : 'Verified Device';
+
+      console.log(`📱 [VERIFY_DEVICE] تسجيل الجهاز: "${deviceIdToRegister}"`);
+
+      // ✅ إذا كان deviceId فارغاً، استخدم قيمة افتراضية
+      if (!deviceIdToRegister || deviceIdToRegister === 'unknown' || deviceIdToRegister === 'null') {
+        console.log('⚠️ [VERIFY_DEVICE] deviceId غير صالح، استخدام قيمة افتراضية');
+        // لا نسجل الجهاز، فقط نعتبر التحقق ناجحاً
+      } else {
+        // ✅ تسجيل الجهاز باستخدام upsert (لتفادي التكرار)
+        const { error: deviceError } = await supabase
+          .from('devices')
+          .upsert({
+            user_id: user.id,
+            device_id: deviceIdToRegister,
+            device_name: deviceNameToRegister,
+            last_seen: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          }, {
+            onConflict: 'user_id,device_id',
+          });
+
+        if (deviceError) {
+          console.error('❌ [VERIFY_DEVICE] فشل تسجيل الجهاز:', deviceError.message);
+          // لا نوقف العملية، فقط نسجل الخطأ
+        } else {
+          console.log('✅ [VERIFY_DEVICE] تم تسجيل الجهاز بنجاح');
+        }
+      }
 
       // ✅ تحديث الرمز كمستخدم
       await supabase
@@ -423,12 +526,20 @@ const authController = {
         .update({ is_used: true })
         .eq('id', token.id);
 
+      // ✅ تحديث last_login_at للمستخدم
+      await supabase
+        .from('users')
+        .update({
+          last_login_at: new Date().toISOString(),
+        })
+        .eq('id', user.id);
+
       return res.json({
         success: true,
         message: '✅ تم التحقق من الجهاز بنجاح',
         data: {
-          deviceId: deviceIdToRegister,
-          deviceName: deviceName || 'Verified Device',
+          deviceId: deviceIdToRegister || 'default',
+          deviceName: deviceNameToRegister,
         }
       });
 
@@ -442,7 +553,7 @@ const authController = {
   },
 
   // ============================================
-  // ✅ VERIFY
+  // ✅ VERIFY (Activation)
   // ============================================
   verify: async (req, res) => {
     try {
@@ -778,7 +889,7 @@ const authController = {
   },
 
   // ============================================
-  // 🔓 FORGOT PASSWORD - محسّن
+  // 🔓 FORGOT PASSWORD
   // ============================================
   forgotPassword: async (req, res) => {
     try {
@@ -827,7 +938,7 @@ const authController = {
   },
 
   // ============================================
-  // 🔄 RESET PASSWORD - محسّن
+  // 🔄 RESET PASSWORD
   // ============================================
   resetPassword: async (req, res) => {
     try {
@@ -849,7 +960,6 @@ const authController = {
 
       const supabase = getSupabaseClient();
 
-      // ✅ التحقق من الرمز
       const { data: resetToken, error } = await supabase
         .from('verification_tokens')
         .select('*')
@@ -875,13 +985,11 @@ const authController = {
         });
       }
 
-      // ✅ تحديث الرمز كمستخدم
       await supabase
         .from('verification_tokens')
         .update({ is_used: true })
         .eq('id', resetToken.id);
 
-      // ✅ تحديث كلمة المرور
       const hashedPassword = await hashPassword(newPassword);
 
       await supabase
@@ -892,7 +1000,6 @@ const authController = {
         })
         .eq('email', email);
 
-      // ✅ حذف جميع توكنات التحديث
       await supabase
         .from('refresh_tokens')
         .delete()
