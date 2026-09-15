@@ -1,5 +1,5 @@
 // ============================================
-// 🔐 AUTH CONTROLLER - النسخة النهائية المُصلحة
+// 🔐 AUTH CONTROLLER - النسخة النهائية
 // ============================================
 
 const bcrypt = require('bcrypt');
@@ -120,7 +120,6 @@ const authController = {
         throw new AppError('❌ فشل إنشاء الحساب', 500, 'DB_ERROR');
       }
 
-      // ✅ تسجيل الجهاز في جدول devices إذا كان متاحاً
       if (deviceId) {
         try {
           await supabase.from('devices').upsert({
@@ -190,7 +189,6 @@ const authController = {
   login: async (req, res) => {
     try {
       console.log('🔐 [LOGIN] Request received');
-      console.log('🔐 [LOGIN] Body:', JSON.stringify(req.body, null, 2));
 
       const { email, password, deviceId, deviceName } = req.body;
 
@@ -202,7 +200,7 @@ const authController = {
       }
 
       console.log(`✅ [LOGIN] محاولة للمستخدم: ${email}`);
-      console.log(`📱 [LOGIN] deviceId المستقبل: "${deviceId}" (type: ${typeof deviceId})`);
+      console.log(`📱 [LOGIN] deviceId المستقبل: "${deviceId}"`);
 
       const supabase = getSupabaseClient();
 
@@ -249,7 +247,9 @@ const authController = {
         console.warn('⚠️ [LOGIN] فشل جلب بيانات إضافية:', err.message);
       }
 
-      // ✅ Step 3: Merge data
+      // ============================================
+      // ✅ Step 3: Merge data - النسخة الكاملة
+      // ============================================
       const user = {
         id: authUser.id,
         email: authUser.email,
@@ -259,15 +259,47 @@ const authController = {
         role: userData.role || 'user',
         is_verified: authUser.email_confirmed_at != null,
         free_posts_remaining: userData.free_posts_remaining ?? 1,
+        notifications_remaining: userData.notifications_remaining ?? 0,
         is_active: userData.is_active !== false,
         created_at: userData.created_at || authUser.created_at,
         last_login_at: new Date().toISOString(),
+
+        // ✅ حقول الملف الشخصي
         full_name: userData.full_name || null,
+        full_name_ar: userData.full_name_ar || null,
+        full_name_en: userData.full_name_en || null,
         national_id: userData.national_id || null,
         wallet_phone: userData.wallet_phone || null,
         display_phone: userData.display_phone || null,
+        wallet_verified: userData.wallet_verified || false,
+
+        // ✅ نوع الحساب والتخصصات
         user_type_id: userData.user_type_id || '1',
         specializations: userData.specializations || [],
+
+        // ✅ الرصيد
+        balance: userData.balance || 0,
+
+        // ✅ حقول التحقق
+        is_email_verified: userData.is_email_verified || false,
+        is_phone_verified: userData.is_phone_verified || false,
+        is_id_verified: userData.is_id_verified || false,
+        is_business_verified: userData.is_business_verified || false,
+        is_address_verified: userData.is_address_verified || false,
+
+        // ✅ حقول إضافية
+        is_admin: userData.is_admin || false,
+        is_blocked: userData.is_blocked || false,
+        blocked_reason: userData.blocked_reason || null,
+        blocked_at: userData.blocked_at || null,
+        business_license: userData.business_license || null,
+        verified_business: userData.verified_business || false,
+        is_expert: userData.is_expert || false,
+        country_code: userData.country_code || null,
+        device_id: userData.device_id || null,
+        permissions: userData.permissions || [],
+        favorite_sellers_ids: userData.favorite_sellers_ids || [],
+        badges: userData.badges || [],
       };
 
       // ✅ Step 4: Check if account is active
@@ -280,25 +312,21 @@ const authController = {
       }
 
       // ============================================
-      // ✅ Step 5: DEVICE VERIFICATION - النسخة المُصلحة
+      // ✅ Step 5: DEVICE VERIFICATION
       // ============================================
-      
-      // ✅ تحويل deviceId إلى String نظيف
       const deviceIdToCheck = deviceId ? String(deviceId).trim() : '';
-      
+
       console.log(`📱 [LOGIN] Device ID للتحقق: "${deviceIdToCheck}"`);
 
       // ✅ إذا كان deviceId فارغاً أو غير صالح، تخطى التحقق
-      if (!deviceIdToCheck || 
-          deviceIdToCheck === 'unknown' || 
+      if (!deviceIdToCheck ||
+          deviceIdToCheck === 'unknown' ||
           deviceIdToCheck === 'null' ||
           deviceIdToCheck === '' ||
           deviceIdToCheck.length < 5) {
-        
-        console.log('⚠️ [LOGIN] deviceId غير صالح أو فارغ - تخطي التحقق من الجهاز');
-        console.log('⚠️ [LOGIN] سيتم تسجيل الدخول مباشرة');
-        
-        // ✅ تسجيل الدخول مباشرة بدون تحقق
+
+        console.log('⚠️ [LOGIN] deviceId غير صالح - تخطي التحقق');
+
         await supabase
           .from('users')
           .update({
@@ -315,8 +343,6 @@ const authController = {
           created_at: new Date().toISOString(),
         });
 
-        delete user.password;
-
         console.log(`✅ [LOGIN] تسجيل دخول ناجح (بدون جهاز): ${email}`);
 
         return res.json({
@@ -330,7 +356,7 @@ const authController = {
         });
       }
 
-      // ✅ الآن ابحث عن الجهاز في قاعدة البيانات
+      // ✅ ابحث عن الجهاز
       console.log(`🔍 [LOGIN] البحث عن الجهاز: user_id=${user.id}, device_id="${deviceIdToCheck}"`);
 
       const { data: device, error: deviceError } = await supabase
@@ -342,14 +368,13 @@ const authController = {
 
       if (deviceError) {
         console.error('❌ [LOGIN] خطأ في البحث عن الجهاز:', deviceError.message);
-        // في حالة الخطأ، نسمح بالدخول (لا نمنع المستخدم)
         console.log('⚠️ [LOGIN] خطأ في البحث - تخطي التحقق من الجهاز');
       } else if (!device) {
         // ✅ جهاز جديد - أرسل رمز تحقق
         console.log(`📱 [LOGIN] جهاز جديد غير معروف: ${deviceIdToCheck}`);
-        
+
         const otp = generateOTP();
-        
+
         await supabase.from('verification_tokens').insert({
           email: email,
           token: otp,
@@ -358,10 +383,10 @@ const authController = {
           is_used: false,
           created_at: new Date().toISOString(),
         });
-        
+
         console.log(`📧 محاولة إرسال بريد تحقق الجهاز إلى ${email}`);
         const emailResult = await emailService.sendDeviceVerificationEmail(email, otp);
-        
+
         if (emailResult.success && !emailResult.simulated) {
           console.log(`✅ تم إرسال رمز التحقق إلى ${email}`);
         } else {
@@ -375,7 +400,7 @@ const authController = {
           requiresDeviceVerification: true,
           code: 'NEW_DEVICE_DETECTED',
           email: email,
-          ...(emailResult.simulated && { 
+          ...(emailResult.simulated && {
             debug_code: otp,
             debug_message: '⚠️ وضع المحاكاة: استخدم هذا الرمز للتحقق'
           })
@@ -384,7 +409,7 @@ const authController = {
 
       // ✅ Step 6: جهاز معروف - تحديث last_seen
       console.log(`✅ [LOGIN] جهاز معروف - تحديث last_seen`);
-      
+
       await supabase
         .from('devices')
         .update({
@@ -412,8 +437,6 @@ const authController = {
         created_at: new Date().toISOString(),
       });
 
-      delete user.password;
-
       console.log(`✅ [LOGIN] تسجيل دخول ناجح للمستخدم: ${email}`);
 
       return res.json({
@@ -438,7 +461,7 @@ const authController = {
   },
 
   // ============================================
-  // ✅ VERIFY DEVICE - النسخة المُصلحة
+  // ✅ VERIFY DEVICE
   // ============================================
   verifyDevice: async (req, res) => {
     try {
@@ -494,12 +517,10 @@ const authController = {
 
       console.log(`📱 [VERIFY_DEVICE] تسجيل الجهاز: "${deviceIdToRegister}"`);
 
-      // ✅ إذا كان deviceId فارغاً، استخدم قيمة افتراضية
       if (!deviceIdToRegister || deviceIdToRegister === 'unknown' || deviceIdToRegister === 'null') {
         console.log('⚠️ [VERIFY_DEVICE] deviceId غير صالح، استخدام قيمة افتراضية');
-        // لا نسجل الجهاز، فقط نعتبر التحقق ناجحاً
       } else {
-        // ✅ تسجيل الجهاز باستخدام upsert (لتفادي التكرار)
+        // ✅ تسجيل الجهاز باستخدام upsert
         const { error: deviceError } = await supabase
           .from('devices')
           .upsert({
@@ -514,7 +535,6 @@ const authController = {
 
         if (deviceError) {
           console.error('❌ [VERIFY_DEVICE] فشل تسجيل الجهاز:', deviceError.message);
-          // لا نوقف العملية، فقط نسجل الخطأ
         } else {
           console.log('✅ [VERIFY_DEVICE] تم تسجيل الجهاز بنجاح');
         }
