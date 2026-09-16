@@ -8,14 +8,10 @@ require('dotenv').config();
 let redisClient = null;
 let isRedisAvailable = false;
 
-// ============================================
-// 🔌 CONNECT TO REDIS
-// ============================================
-
 async function connectRedis() {
   try {
     const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
-    
+
     redisClient = redis.createClient({
       url: redisUrl,
       password: process.env.REDIS_PASSWORD,
@@ -31,29 +27,29 @@ async function connectRedis() {
         timeout: 5000,
       },
     });
-    
+
     redisClient.on('error', (error) => {
       console.warn('⚠️ Redis error:', error.message);
       isRedisAvailable = false;
     });
-    
+
     redisClient.on('connect', () => {
       console.log('✅ Redis connected successfully');
       isRedisAvailable = true;
     });
-    
+
     redisClient.on('ready', () => {
       console.log('✅ Redis ready');
       isRedisAvailable = true;
     });
-    
+
     redisClient.on('end', () => {
       console.log('⚠️ Redis connection ended');
       isRedisAvailable = false;
     });
-    
+
     await redisClient.connect();
-    
+
     return redisClient;
   } catch (error) {
     console.warn('⚠️ Redis connection failed:', error.message);
@@ -62,13 +58,9 @@ async function connectRedis() {
   }
 }
 
-// ============================================
-// 📦 CACHE HELPERS
-// ============================================
-
 async function getCache(key) {
   if (!isRedisAvailable || !redisClient) return null;
-  
+
   try {
     const value = await redisClient.get(key);
     if (value) {
@@ -87,7 +79,7 @@ async function getCache(key) {
 
 async function setCache(key, value, expirySeconds = 300) {
   if (!isRedisAvailable || !redisClient) return false;
-  
+
   try {
     const serialized = typeof value === 'string' ? value : JSON.stringify(value);
     await redisClient.setEx(key, expirySeconds, serialized);
@@ -100,7 +92,7 @@ async function setCache(key, value, expirySeconds = 300) {
 
 async function deleteCache(key) {
   if (!isRedisAvailable || !redisClient) return false;
-  
+
   try {
     await redisClient.del(key);
     return true;
@@ -112,7 +104,7 @@ async function deleteCache(key) {
 
 async function clearCache(pattern = '*') {
   if (!isRedisAvailable || !redisClient) return false;
-  
+
   try {
     const keys = await redisClient.keys(pattern);
     if (keys.length > 0) {
@@ -124,10 +116,6 @@ async function clearCache(pattern = '*') {
     return false;
   }
 }
-
-// ============================================
-// 📤 EXPORTS
-// ============================================
 
 module.exports = {
   connectRedis,

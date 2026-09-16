@@ -7,10 +7,6 @@ const { createClient } = require('@supabase/supabase-js');
 const { v4: uuidv4 } = require('uuid');
 require('dotenv').config();
 
-// ============================================
-// 📊 TABLE NAMES
-// ============================================
-
 const TABLES = {
   users: 'users',
   admins: 'admins',
@@ -46,10 +42,6 @@ const TABLES = {
   refresh_tokens: 'refresh_tokens',
 };
 
-// ============================================
-// 🔐 SUPABASE CLIENTS
-// ============================================
-
 let supabaseClient = null;
 let supabaseAdmin = null;
 
@@ -57,15 +49,15 @@ function getSupabaseClient() {
   if (!supabaseClient) {
     const supabaseUrl = process.env.SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_ANON_KEY;
-    
+
     if (!supabaseUrl || !supabaseKey) {
       throw new Error('⚠️ SUPABASE_URL and SUPABASE_ANON_KEY are required');
     }
-    
+
     supabaseClient = createClient(supabaseUrl, supabaseKey, {
       auth: {
-        persistSession: true,
-        autoRefreshToken: true,
+        persistSession: false,
+        autoRefreshToken: false,
       },
       realtime: {
         params: {
@@ -73,7 +65,7 @@ function getSupabaseClient() {
         },
       },
     });
-    
+
     console.log('✅ Supabase client initialized (Realtime disabled)');
   }
   return supabaseClient;
@@ -82,16 +74,16 @@ function getSupabaseClient() {
 function getSupabaseAdmin() {
   if (!supabaseAdmin) {
     const supabaseUrl = process.env.SUPABASE_URL;
-    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
-    
+    const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+
     if (!supabaseUrl || !supabaseServiceKey) {
       throw new Error('⚠️ SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
     }
-    
+
     supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
       auth: {
-        persistSession: true,
-        autoRefreshToken: true,
+        persistSession: false,
+        autoRefreshToken: false,
       },
       realtime: {
         params: {
@@ -99,15 +91,11 @@ function getSupabaseAdmin() {
         },
       },
     });
-    
+
     console.log('✅ Supabase admin client initialized (Realtime disabled)');
   }
   return supabaseAdmin;
 }
-
-// ============================================
-// 🛠️ HELPER FUNCTIONS
-// ============================================
 
 function isValidUUID(id) {
   if (!id) return false;
@@ -132,35 +120,29 @@ function generateShortId() {
 }
 
 function generateId() {
-  return uuidv4(); // ✅ الآن UUID
+  return uuidv4();
 }
 
 function generateIntId() {
   return Date.now() + Math.floor(Math.random() * 1000);
 }
 
-// ✅ ✅ ✅ إصلاح isValidId - يقبل UUID
 function isValidId(id) {
   if (!id) return false;
   if (typeof id === 'number') return id > 0;
   if (typeof id === 'string') {
     if (id.length === 0) return false;
-    // ✅ يقبل UUID أو رقم
     return isValidUUID(id) || (!isNaN(parseInt(id)) && parseInt(id) > 0);
   }
   return false;
 }
-
-// ============================================
-// 📦 STORAGE HELPERS
-// ============================================
 
 async function uploadFile(bucket, path, file, options = {}) {
   const client = getSupabaseClient();
   const { data, error } = await client.storage
     .from(bucket)
     .upload(path, file, options);
-  
+
   if (error) throw error;
   return data;
 }
@@ -176,14 +158,10 @@ async function deleteFile(bucket, path) {
   const { data, error } = await client.storage
     .from(bucket)
     .remove([path]);
-  
+
   if (error) throw error;
   return data;
 }
-
-// ============================================
-// 📤 EXPORTS
-// ============================================
 
 module.exports = {
   TABLES,
