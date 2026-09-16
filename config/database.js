@@ -1,9 +1,10 @@
 // ============================================
 // 🗄️ DATABASE - مع Caching متقدم
+// ✅ النسخة النهائية مع UUID
 // ============================================
 
 const NodeCache = require('node-cache');
-const { getSupabaseClient, toSafeId } = require('./supabase');
+const { getSupabaseClient, toSafeId, isValidUUID } = require('./supabase');
 
 // Cache configuration
 const cache = new NodeCache({
@@ -27,14 +28,12 @@ class Database {
   async queryWithCache(table, query, ttl = 300) {
     const cacheKey = `${table}:${JSON.stringify(query)}`;
     
-    // ✅ التحقق من الكاش
     const cached = this.cache.get(cacheKey);
     if (cached) {
       console.log(`📦 Cache hit: ${cacheKey}`);
       return cached;
     }
 
-    // ✅ تنفيذ الاستعلام
     const result = await this.supabase
       .from(table)
       .select(query.select || '*')
@@ -44,7 +43,6 @@ class Database {
 
     if (result.error) throw result.error;
 
-    // ✅ حفظ في الكاش
     this.cache.set(cacheKey, result.data, ttl);
     
     return result.data;
@@ -79,13 +77,14 @@ class Database {
     return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
   }
 
-  // ✅ التحقق من صحة المعرف
+  // ✅ ✅ ✅ إصلاح isValidId - يقبل UUID
   isValidId(id) {
     if (!id) return false;
     if (typeof id === 'number') return id > 0;
     if (typeof id === 'string') {
-      const parsed = parseInt(id);
-      return !isNaN(parsed) && parsed > 0;
+      if (id.length === 0) return false;
+      // ✅ يقبل UUID أو رقم
+      return isValidUUID(id) || (!isNaN(parseInt(id)) && parseInt(id) > 0);
     }
     return false;
   }

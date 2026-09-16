@@ -1,5 +1,6 @@
 // ============================================
-// 🔨 AUCTION CONTROLLER - معدل ✅
+// 🔨 AUCTION CONTROLLER - النسخة النهائية ✅
+// ✅ تم إضافة getSupabaseClient و TABLES
 // ============================================
 
 const { Auction } = require('../models');
@@ -8,6 +9,9 @@ const { validateId } = require('../utils/validators');
 const { sanitizeInput } = require('../utils/helpers');
 const logger = require('../utils/logger');
 const { broadcastBid, broadcastAuctionEnd } = require('../socket/auctionSocket');
+
+// ✅ ✅ ✅ إضافة الاستيراد المفقود
+const { getSupabaseClient, TABLES } = require('../config/supabase');
 
 class AuctionController {
   // ============================================

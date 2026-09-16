@@ -1,5 +1,6 @@
 // ============================================
 // 🔐 SUPABASE CLIENT CONFIGURATION
+// ✅ النسخة النهائية مع UUID
 // ============================================
 
 const { createClient } = require('@supabase/supabase-js');
@@ -61,13 +62,11 @@ function getSupabaseClient() {
       throw new Error('⚠️ SUPABASE_URL and SUPABASE_ANON_KEY are required');
     }
     
-    // ✅ ✅ ✅ إصلاح WebSocket - تعطيل Realtime بالكامل
     supabaseClient = createClient(supabaseUrl, supabaseKey, {
       auth: {
         persistSession: true,
         autoRefreshToken: true,
       },
-      // ✅ تعطيل Realtime تماماً
       realtime: {
         params: {
           eventsPerSecond: 1,
@@ -75,7 +74,6 @@ function getSupabaseClient() {
       },
     });
     
-    // ✅ منع محاولة الاتصال بـ WebSocket
     console.log('✅ Supabase client initialized (Realtime disabled)');
   }
   return supabaseClient;
@@ -134,19 +132,21 @@ function generateShortId() {
 }
 
 function generateId() {
-  return Date.now().toString(36) + Math.random().toString(36).substring(2, 7);
+  return uuidv4(); // ✅ الآن UUID
 }
 
 function generateIntId() {
   return Date.now() + Math.floor(Math.random() * 1000);
 }
 
+// ✅ ✅ ✅ إصلاح isValidId - يقبل UUID
 function isValidId(id) {
   if (!id) return false;
   if (typeof id === 'number') return id > 0;
   if (typeof id === 'string') {
-    const parsed = parseInt(id);
-    return !isNaN(parsed) && parsed > 0;
+    if (id.length === 0) return false;
+    // ✅ يقبل UUID أو رقم
+    return isValidUUID(id) || (!isNaN(parseInt(id)) && parseInt(id) > 0);
   }
   return false;
 }

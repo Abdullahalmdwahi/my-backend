@@ -1,5 +1,6 @@
 // ============================================
-// 👑 ADMIN CONTROLLER - جديد ✅
+// 👑 ADMIN CONTROLLER - النسخة النهائية ✅
+// ✅ تم إضافة getSupabaseClient و TABLES
 // ============================================
 
 const { User, Product, Auction, Order, Payment } = require('../models');
@@ -8,6 +9,9 @@ const { validateId } = require('../utils/validators');
 const { sanitizeInput } = require('../utils/helpers');
 const logger = require('../utils/logger');
 const NotificationService = require('../services/notificationService');
+
+// ✅ ✅ ✅ إضافة الاستيراد المفقود
+const { getSupabaseClient, TABLES } = require('../config/supabase');
 
 class AdminController {
   // ============================================
